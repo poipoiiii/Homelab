@@ -1,0 +1,31 @@
+version: 1.3.17
+cache: true
+
+mcpSettings:
+  allowedDomains:
+    - "lab-tools"
+  allowedAddresses:
+    - "lab-tools:8765"
+
+mcpServers:
+  lab-tools:
+    type: streamable-http
+    url: http://lab-tools:8765/mcp
+    title: "实验室工具"
+    description: "只读查询容器状态、日志、磁盘占用和记账流水"
+    timeout: 60000
+    initTimeout: 20000
+    requiresOAuth: false
+    serverInstructions: true
+
+endpoints:
+  custom:
+    - name: "DeepSeek"
+      apiKey: "${DEEPSEEK_API_KEY}"
+      baseURL: "https://api.deepseek.com/v1"
+      models:
+        default: ["deepseek-chat"]
+        fetch: true
+      titleConvo: true
+      titleModel: "deepseek-chat"
+      modelDisplayLabel: "DeepSeek"

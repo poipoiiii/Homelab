@@ -1,0 +1,51 @@
+services:
+  homarr:
+    image: ghcr.io/homarr-labs/homarr:latest
+    container_name: homarr
+    labels:
+      dev.dozzle.group: "入口与运维"
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:7575:7575"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    environment:
+      - TZ=Asia/Shanghai
+      - SECRET_ENCRYPTION_KEY=${HOMARR_SECRET_KEY}
+    volumes:
+      - homarr-data:/appdata
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      # 自定义 logo / favicon，供 Homarr 和其他服务引用
+      - /home/ubuntu/branding:/app/apps/nextjs/public/branding:ro
+    # 加入各服务所在网络，集成/探活直接用容器名访问，不依赖 tailnet DNS
+    networks:
+      - default
+      - jellyfin
+      - cloudreve
+      - librechat
+      - billai
+      - traccar
+      - pinchflat
+
+networks:
+  jellyfin:
+    external: true
+    name: jellyfin_default
+  cloudreve:
+    external: true
+    name: cloudreve_default
+  librechat:
+    external: true
+    name: librechat_default
+  billai:
+    external: true
+    name: bill-ai_default
+  traccar:
+    external: true
+    name: traccar_default
+  pinchflat:
+    external: true
+    name: pinchflat_default
+
+volumes:
+  homarr-data:

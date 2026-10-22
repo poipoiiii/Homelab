@@ -1,0 +1,32 @@
+# MeTube —— 按 URL 一次性下载（yt-dlp），供 Agent 调用
+# 仅监听本机回环；三个目标目录分别挂到 /downloads/<target>
+# cookies.txt 为 B 站登录态（SESSDATA），只读挂载；不要提交到 git，文件权限 600
+services:
+  metube:
+    image: alexta69/metube:2026.10.22
+    container_name: metube
+    labels:
+      dev.dozzle.group: "影音"
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8081:8081"
+    environment:
+      - TZ=Asia/Shanghai
+      - PUID=1000
+      - PGID=1000
+      - UMASK=022
+      - MAX_CONCURRENT_DOWNLOADS=1
+      - CUSTOM_DIRS=true
+      - CREATE_CUSTOM_DIRS=true
+      - TEMP_DIR=/downloads/.metube/tmp
+      - 'YTDL_OPTIONS={"updatetime": false, "cookiefile": "/cookies/cookies.txt"}'
+      - "OUTPUT_TEMPLATE=%(title)s [%(id)s].%(ext)s"
+    volumes:
+      - /mnt/d/game_video_:/downloads/game_video
+      - /mnt/d/yt_video_:/downloads/yt_video
+      - /mnt/d/mv__:/downloads/movies
+      - ./cookies.txt:/cookies/cookies.txt
+      - metube_state:/downloads/.metube
+
+volumes:
+  metube_state:

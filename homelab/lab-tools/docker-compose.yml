@@ -1,0 +1,80 @@
+# lab-tools —— 实验室工具服务（MCP over HTTP）
+# 只读查询 + 容器启停（二次确认）+ 下载提交；Docker 访问经由 socket proxy
+services:
+  lab-tools:
+    build: .
+    container_name: lab-tools
+    labels:
+      dev.dozzle.group: "AI 助手"
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8765:8765"
+    environment:
+      - TZ=Asia/Shanghai
+      - DOCKER_HOST=tcp://docker-proxy:2375
+      - DOCKER_HOST_WRITE=tcp://docker-proxy-write:2375
+      - BILL_AI_URL=http://bill-ai:8091
+      - METUBE_URL=http://metube:8081
+      - AUDIT_PATH=/audit/actions.jsonl
+    volumes:
+      - lab_tools_audit:/audit
+    networks:
+      - default
+      - bill_ai
+      - metube
+    depends_on:
+      - docker-proxy
+      - docker-proxy-write
+
+  docker-proxy:
+    image: tecnativa/docker-socket-proxy:latest
+    container_name: lab-tools-docker-proxy
+    labels:
+      dev.dozzle.group: "AI 助手"
+    restart: unless-stopped
+    environment:
+      - CONTAINERS=1
+      - IMAGES=1
+      - INFO=1
+      - VERSION=1
+      - SYSTEM=1
+      - POST=0
+      - EXEC=0
+      - VOLUMES=0
+      - NETWORKS=0
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    networks:
+      - default
+
+  # 写代理：不开放 CONTAINERS 查询，只放行 start/stop
+  docker-proxy-write:
+    image: tecnativa/docker-socket-proxy:latest
+    container_name: lab-tools-docker-proxy-write
+    labels:
+      dev.dozzle.group: "AI 助手"
+    restart: unless-stopped
+    environment:
+      - CONTAINERS=0
+      - ALLOW_START=1
+      - ALLOW_STOP=1
+      - POST=1
+      - EXEC=0
+      - VOLUMES=0
+      - NETWORKS=0
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    networks:
+      - default
+
+networks:
+  bill_ai:
+    external: true
+    name: bill-ai_default
+  metube:
+    external: true
+    name: metube_default
+
+volumes:
+  lab_tools_audit:
+

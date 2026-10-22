@@ -1,0 +1,32 @@
+# Vaultwarden —— 自建 Bitwarden 密码库（兼容官方 App / 浏览器扩展）
+# 注意：
+#   1) Web 密码库需要"安全上下文"，只能用 http://localhost:8082 或 HTTPS 打开；
+#      通过 http://<局域网 IP>:8082 访问会被浏览器禁用，远程请走 Tailscale 的 HTTPS 或反代。
+#   2) 注册完自己的账号后，把 SIGNUPS_ALLOWED 改成 false 再 up -d。
+#   3) ADMIN_TOKEN 不要明文：先执行
+#        docker run --rm -it vaultwarden/server /vaultwarden hash
+#      把得到的 argon2 串写进 .env 的 VAULTWARDEN_ADMIN_TOKEN。
+services:
+  vaultwarden:
+    image: vaultwarden/server:latest
+    container_name: vaultwarden
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8082:80"
+    environment:
+      - TZ=Asia/Shanghai
+      - DOMAIN=http://localhost:8082
+      - SIGNUPS_ALLOWED=true
+      - ADMIN_TOKEN=${VAULTWARDEN_ADMIN_TOKEN:?先在 .env 里填 VAULTWARDEN_ADMIN_TOKEN}
+      - WEBSOCKET_ENABLED=true
+    # Homarr 自动发现时用这里的地址生成卡片（tailnet 改名后需同步修改）
+    labels:
+      homarr.name: "Vaultwarden"
+      homarr.href: "https://home.example-tailnet.ts.net:8445"
+      homarr.group: "私人服务"
+      homarr.description: "密码库"
+    volumes:
+      - vaultwarden_data:/data
+
+volumes:
+  vaultwarden_data:

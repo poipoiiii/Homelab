@@ -1,0 +1,36 @@
+# Jellyfin —— 媒体服务器（官方镜像）
+services:
+  jellyfin:
+    image: jellyfin/jellyfin:latest
+    container_name: jellyfin
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8096:8096"
+    environment:
+      - TZ=Asia/Shanghai
+    # Homarr 自动发现时用这里的地址生成卡片（tailnet 改名后需同步修改）
+    labels:
+      dev.dozzle.group: "影音"
+      homarr.name: "Jellyfin"
+      homarr.href: "http://example.com:8096/"
+      homarr.group: "私人服务"
+      homarr.description: "影视库"
+    volumes:
+      - jellyfin_config:/config
+      - jellyfin_cache:/cache
+      # 自定义 favicon / touch icon（覆盖镜像内带 hash 的静态文件）
+      - /home/ubuntu/branding/favicon.ico:/jellyfin/jellyfin-web/favicon.bc8d51405ec040305a87.ico:ro
+      - /home/ubuntu/branding/apple-touch-icon.png:/jellyfin/jellyfin-web/touchicon.f5bbb798cb2c65908633.png:ro
+      - /home/ubuntu/branding/apple-touch-icon.png:/jellyfin/jellyfin-web/touchicon144.39209dd2362c0db7c673.png:ro
+      - /mnt/d/photo_:/media/photos:ro
+      - /mnt/d/music_:/media/music:ro
+      - /mnt/d/mv__:/media/movies:ro
+      - /mnt/d/game_video_:/media/videos/game_video:ro
+      - /mnt/d/obs_video_:/media/videos/obs_video:ro
+      # Pinchflat（yt-dlp）下载的 YouTube 内容，库根目录见 pinchflat 的 Output path 子目录
+      - /mnt/d/yt_video_:/media/yt:ro
+      # E 盘的录屏/截图合集（9P 只读，不能作可写数据盘）
+      - /mnt/e/Captures:/media/captures:ro
+volumes:
+  jellyfin_config:
+  jellyfin_cache:

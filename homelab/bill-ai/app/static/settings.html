@@ -1,0 +1,137 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="color-scheme" content="light">
+  <title>设置 · Rong的账单</title>
+  <link rel="stylesheet" href="/static/style.css?v=20261022f">
+  <link rel="stylesheet" href="/static/dashboard.css?v=20261022f">
+  <link rel="stylesheet" href="/static/settings.css?v=20261022f">
+</head>
+<body>
+  <div class="page dash settings-page">
+    <header class="masthead">
+      <a class="brand" href="/" aria-label="Rong的账单 首页">
+        <span class="brand-mark" aria-hidden="true">账</span>
+        <span class="brand-name">Rong的账单</span>
+      </a>
+      <nav class="dash-nav" aria-label="主导航">
+        <a class="ghost-link" href="/">记一笔</a>
+        <a class="ghost-link" href="/dashboard">总览</a>
+        <a class="ghost-link" href="/transactions">流水</a>
+        <a class="ghost-link is-active" href="/settings" aria-current="page">设置</a>
+      </nav>
+    </header>
+
+    <main>
+      <section class="settings-hero">
+        <p class="eyebrow">设置</p>
+        <h1 class="settings-title">账户与分类</h1>
+        <p class="settings-sub">余额 = 期初余额 + 全部流水，改账户或分类会影响历史统计。</p>
+      </section>
+
+      <section class="panel-block">
+        <header class="block-head">
+          <h2>账户</h2>
+          <button type="button" class="btn secondary sm" id="addAccountBtn">新增账户</button>
+        </header>
+        <div class="setting-list" id="accountList"></div>
+        <p class="block-hint">归档后不再出现在记账和总览里，历史流水保留。导入历史账单后，可用「按实际余额校准」把余额拉回真实值。</p>
+      </section>
+
+      <section class="panel-block">
+        <header class="block-head">
+          <h2>分类</h2>
+          <button type="button" class="btn secondary sm" id="addCategoryBtn">新增分类</button>
+        </header>
+        <div class="setting-list" id="categoryList"></div>
+        <p class="block-hint">分类下还有流水时不能删除。</p>
+      </section>
+    </main>
+
+    <footer class="footer">
+      <span>本地账本 · 数据留在自己的服务器。</span>
+      <span id="updatedAt"></span>
+    </footer>
+  </div>
+
+  <div class="sheet" id="accountSheet" hidden>
+    <div class="sheet-backdrop" data-close="account"></div>
+    <div class="sheet-card" role="dialog" aria-modal="true" aria-labelledby="accountSheetTitle">
+      <div class="sheet-grip" aria-hidden="true"></div>
+      <header class="sheet-head">
+        <div>
+          <p class="sheet-eyebrow">账户</p>
+          <h2 id="accountSheetTitle">编辑账户</h2>
+        </div>
+        <button type="button" class="sheet-close" data-close="account" aria-label="关闭">×</button>
+      </header>
+      <form class="editor-form" id="accountForm">
+        <label class="field">
+          <span>名称</span>
+          <input id="aName" required placeholder="例如 招商银行卡">
+        </label>
+        <div class="field-row">
+          <label class="field">
+            <span>期初余额</span>
+            <input id="aOpening" inputmode="decimal" placeholder="0.00">
+          </label>
+          <label class="field">
+            <span>期初日期</span>
+            <input id="aOpeningDate" type="date">
+          </label>
+        </div>
+        <label class="check"><input type="checkbox" id="aArchived"> 归档（不参与记账与总览）</label>
+        <label class="field">
+          <span>按实际余额校准（可选）</span>
+          <input id="aActual" inputmode="decimal" placeholder="填现在真实余额，自动反推期初">
+        </label>
+        <p class="editor-error" id="accountError" hidden></p>
+      </form>
+      <footer class="editor-actions">
+        <button type="button" class="btn danger" id="accountDeleteBtn" hidden>删除</button>
+        <span class="spacer"></span>
+        <button type="button" class="btn secondary" data-close="account">取消</button>
+        <button type="button" class="btn primary" id="accountSaveBtn">保存</button>
+      </footer>
+    </div>
+  </div>
+
+  <div class="sheet" id="categorySheet" hidden>
+    <div class="sheet-backdrop" data-close="category"></div>
+    <div class="sheet-card" role="dialog" aria-modal="true" aria-labelledby="categorySheetTitle">
+      <div class="sheet-grip" aria-hidden="true"></div>
+      <header class="sheet-head">
+        <div>
+          <p class="sheet-eyebrow">分类</p>
+          <h2 id="categorySheetTitle">编辑分类</h2>
+        </div>
+        <button type="button" class="sheet-close" data-close="category" aria-label="关闭">×</button>
+      </header>
+      <form class="editor-form" id="categoryForm">
+        <label class="field">
+          <span>名称</span>
+          <input id="cName" required placeholder="例如 宠物">
+        </label>
+        <label class="field">
+          <span>类型</span>
+          <select id="cKind">
+            <option value="expense">支出分类</option>
+            <option value="income">收入分类</option>
+          </select>
+        </label>
+        <p class="editor-error" id="categoryError" hidden></p>
+      </form>
+      <footer class="editor-actions">
+        <button type="button" class="btn danger" id="categoryDeleteBtn" hidden>删除</button>
+        <span class="spacer"></span>
+        <button type="button" class="btn secondary" data-close="category">取消</button>
+        <button type="button" class="btn primary" id="categorySaveBtn">保存</button>
+      </footer>
+    </div>
+  </div>
+
+  <script src="/static/settings.js?v=20261022f"></script>
+</body>
+</html>

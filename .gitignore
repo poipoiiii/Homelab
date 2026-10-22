@@ -1,0 +1,69 @@
+# ============================================================
+# 原则：只入库源码/配置/文档；大数据文件、运行数据、私有凭据一律排除
+# 注意：gitignore 无法按体积过滤，因此凡是可能超过 1MB 的产物类型都按后缀排除
+# ============================================================
+
+# —— WSL 发行版虚拟磁盘与导入包（体积巨大，删了等于重装，绝不能入库）——
+UbuntuD/
+*.vhdx
+*.vhd
+ubuntu-noble-wsl-amd64-*.rootfs.tar.gz
+
+# —— 项目产物目录（下载/导出/日志/临时，规则见 AGENTS.md 5.4）——
+.cache/
+
+# —— 大体积归档 / 媒体 / 安装包：单文件基本都 > 1MB ——
+*.tar
+*.tar.gz
+*.tgz
+*.zip
+*.7z
+*.rar
+*.gz
+*.xz
+*.whl
+*.iso
+*.img
+*.mp4
+*.mkv
+*.avi
+*.mov
+*.flac
+*.mp3
+*.wav
+
+# —— 账单原件与银行流水（个人隐私数据，含 1.5MB 的 PDF）——
+homelab/firefly/**
+!homelab/firefly/docker-compose.yml
+
+# —— 凭据与密钥：绝不能提交 ——
+.env
+*.env
+!*.env.example
+cookies.txt
+*.cookie
+*.pem
+*.key
+
+# —— Python / 构建缓存 ——
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+node_modules/
+dist/
+build/
+
+# —— 日志与临时文件 ——
+*.log
+*.log.*
+*.tmp
+*.bak
+*.swp
+*~
+
+# —— 系统垃圾文件 ——
+.DS_Store
+Thumbs.db
+desktop.ini

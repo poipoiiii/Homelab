@@ -1,0 +1,529 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>开机自启控制台</title>
+<style>
+  :root{
+    --bg:#0a0b0c;
+    --surface:#101214;
+    --surface-2:#15181b;
+    --surface-3:#191d21;
+    --line:#22272c;
+    --line-soft:#1a1e22;
+    --fg:#e8eaec;
+    --fg-2:#9aa3ac;
+    --fg-3:#646d76;
+    --on:#46d99b;
+    --warn:#e2a54a;
+    --danger:#ef6a72;
+    --focus:rgba(70,217,155,.4);
+    --r:10px;
+    --mono:"Cascadia Mono","Cascadia Code",Consolas,"Microsoft YaHei UI",monospace;
+    --sans:"Segoe UI Variable Text","Segoe UI","Microsoft YaHei UI",system-ui,sans-serif;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;background:var(--bg);color:var(--fg);font-family:var(--sans);font-size:14px;line-height:1.5;-webkit-font-smoothing:antialiased}
+  body{min-height:100vh;padding-bottom:80px}
+  ::selection{background:rgba(70,217,155,.25)}
+  :focus-visible{outline:2px solid var(--focus);outline-offset:2px}
+
+  /* ── 顶栏 ───────────────────────────────────────── */
+  .topbar{position:sticky;top:0;z-index:40;background:rgba(10,11,12,.86);backdrop-filter:blur(14px);border-bottom:1px solid var(--line)}
+  .topbar-in{max-width:1080px;margin:0 auto;height:62px;padding:0 24px;display:flex;align-items:center;gap:14px}
+  .mark{width:22px;height:22px;border:1px solid #384049;border-radius:6px;position:relative;flex:none}
+  .mark::after{content:"";position:absolute;inset:5px;border-radius:2px;background:var(--on);box-shadow:0 0 10px rgba(70,217,155,.45)}
+  .brand{display:flex;flex-direction:column;gap:1px;min-width:0}
+  .brand h1{margin:0;font-size:14px;font-weight:600;letter-spacing:.01em}
+  .brand span{font-size:11px;color:var(--fg-3);font-family:var(--mono);letter-spacing:.04em}
+  .top-actions{margin-left:auto;display:flex;align-items:center;gap:8px}
+  .badge{display:inline-flex;align-items:center;gap:6px;height:26px;padding:0 10px;border-radius:999px;border:1px solid var(--line);background:var(--surface);font-size:11.5px;color:var(--fg-2);white-space:nowrap}
+  .badge .dot{width:6px;height:6px;border-radius:50%;background:var(--on);box-shadow:0 0 6px rgba(70,217,155,.6)}
+  .badge.readonly .dot{background:var(--warn);box-shadow:none}
+
+  /* ── 按钮 ───────────────────────────────────────── */
+  .btn{height:32px;padding:0 13px;border-radius:7px;border:1px solid var(--line);background:var(--surface-2);color:var(--fg);font-family:inherit;font-size:12.5px;font-weight:550;cursor:pointer;display:inline-flex;align-items:center;gap:6px;transition:background .15s,border-color .15s,color .15s,transform .12s;white-space:nowrap}
+  .btn:hover{background:var(--surface-3);border-color:#333b43}
+  .btn:active{transform:translateY(1px)}
+  .btn.primary{background:var(--on);border-color:transparent;color:#04140d}
+  .btn.primary:hover{filter:brightness(1.07);background:var(--on)}
+  .btn.primary:disabled{opacity:.35;cursor:not-allowed;filter:none}
+  .btn.ghost{background:transparent}
+  .btn.ghost:hover{background:var(--surface-2)}
+  .btn.danger{color:#ffc0c3;border-color:rgba(239,106,114,.38);background:rgba(239,106,114,.1)}
+  .btn.danger:hover{background:rgba(239,106,114,.17);border-color:rgba(239,106,114,.55)}
+
+  /* ── 概览 ───────────────────────────────────────── */
+  .wrap{max-width:1080px;margin:0 auto;padding:0 24px}
+  .summary{margin-top:26px;border:1px solid var(--line);border-radius:var(--r);background:linear-gradient(180deg,#111417,#0e1012);display:grid;grid-template-columns:repeat(4,1fr);overflow:hidden}
+  .stat{padding:16px 18px;border-left:1px solid var(--line-soft)}
+  .stat:first-child{border-left:none}
+  .stat .n{font-family:var(--mono);font-size:24px;font-weight:600;letter-spacing:-.02em;line-height:1.15}
+  .stat .n small{font-size:12px;color:var(--fg-3);font-weight:400;margin-left:2px}
+  .stat .l{font-size:11.5px;color:var(--fg-3);margin-top:3px;letter-spacing:.03em}
+  .stat.good .n{color:var(--on)}
+  .stat.warn .n{color:var(--warn)}
+  .stat.mute .n{color:var(--fg-2)}
+
+  /* ── 工具条 ─────────────────────────────────────── */
+  .toolbar{display:flex;align-items:center;gap:10px;margin:20px 0 10px;flex-wrap:wrap}
+  .tabs{display:flex;gap:2px;flex-wrap:wrap}
+  .tab{height:30px;padding:0 11px;border-radius:7px;border:1px solid transparent;background:transparent;color:var(--fg-2);font-family:inherit;font-size:12.5px;cursor:pointer;display:inline-flex;align-items:center;gap:7px;transition:background .14s,color .14s,border-color .14s}
+  .tab:hover{color:var(--fg);background:var(--surface-2)}
+  .tab[aria-selected="true"]{color:var(--fg);background:var(--surface-2);border-color:var(--line)}
+  .tab .n{font-family:var(--mono);font-size:11px;color:var(--fg-3)}
+  .tab[aria-selected="true"] .n{color:var(--fg-2)}
+  .search{margin-left:auto;position:relative}
+  .search input{width:210px;height:32px;border-radius:7px;border:1px solid var(--line);background:var(--surface);color:var(--fg);font-family:inherit;font-size:12.5px;padding:0 10px 0 30px;transition:border-color .15s,background .15s}
+  .search input::placeholder{color:var(--fg-3)}
+  .search input:focus{border-color:#3a444d;background:#14171a;outline:none;box-shadow:0 0 0 3px rgba(70,217,155,.08)}
+  .search svg{position:absolute;left:9px;top:8px;width:14px;height:14px;stroke:var(--fg-3);fill:none;stroke-width:1.6}
+
+  /* ── 分组与行 ───────────────────────────────────── */
+  .hint{font-size:11.5px;color:var(--fg-3);margin:0 0 14px}
+  .hint code{font-family:var(--mono);color:var(--fg-2);font-size:11px}
+  .group{margin-bottom:22px;border:1px solid var(--line);border-radius:var(--r);overflow:hidden;background:var(--surface)}
+  .group-head{display:flex;align-items:baseline;gap:9px;padding:10px 16px;background:#0f1214;border-bottom:1px solid var(--line)}
+  .group-head h2{margin:0;font-size:11.5px;font-weight:600;letter-spacing:.09em;text-transform:uppercase;color:var(--fg-2)}
+  .group-head .cnt{font-family:var(--mono);font-size:11px;color:var(--fg-3)}
+  .group-head .loc{margin-left:auto;font-family:var(--mono);font-size:10.5px;color:#4f5860;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:52%}
+  .row{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:16px;padding:12px 16px;border-top:1px solid var(--line-soft);position:relative;transition:background .13s}
+  .row:first-child{border-top:none}
+  .row:hover{background:#121518}
+  .row::before{content:"";position:absolute;left:0;top:0;bottom:0;width:2px;background:transparent}
+  .row.tone-off::before{background:var(--warn);opacity:.55}
+  .row.off{opacity:.62}
+  .row.off:hover{opacity:.9}
+  .row-title{display:flex;align-items:center;gap:7px;flex-wrap:wrap}
+  .row-name{font-size:13.5px;font-weight:560;letter-spacing:.005em}
+  .row-usage{font-size:12px;color:var(--fg-2);margin-top:1px}
+  .row-path{font-family:var(--mono);font-size:10.5px;color:#5c656e;margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%}
+  .row-path.missing{color:#5a4348}
+  .chips{display:inline-flex;gap:5px;align-items:center;flex-wrap:wrap}
+  .chip{font-size:10.5px;line-height:1.5;padding:1px 7px;border-radius:999px;border:1px solid #2a3037;color:var(--fg-3);white-space:nowrap}
+  .chip.off{color:var(--warn);border-color:rgba(226,165,74,.32);background:rgba(226,165,74,.07)}
+  .chip.keep{color:#7e8790}
+  .chip.lock{color:#9aa3ac;background:#171b1e}
+  .chip.need{color:var(--danger);border-color:rgba(239,106,114,.3);background:rgba(239,106,114,.07)}
+  .chip.state-off{color:#98a1ab;border-color:#2c333a;background:#14171a}
+
+  /* 开关 */
+  .sw{width:42px;height:23px;border-radius:999px;border:1px solid #2e353c;background:#1b2025;position:relative;cursor:pointer;padding:0;flex:none;transition:background .18s,border-color .18s}
+  .sw:hover:not(:disabled){border-color:#3c454e}
+  .sw .knob{position:absolute;top:3px;left:3px;width:15px;height:15px;border-radius:50%;background:#79828b;transition:transform .18s cubic-bezier(.3,.7,.4,1),background .18s}
+  .sw[aria-checked="true"]{background:rgba(70,217,155,.16);border-color:rgba(70,217,155,.42)}
+  .sw[aria-checked="true"] .knob{transform:translateX(19px);background:var(--on);box-shadow:0 0 8px rgba(70,217,155,.45)}
+  .sw:disabled{cursor:not-allowed;opacity:.32}
+  .sw:disabled:hover{border-color:#2e353c}
+
+  /* 空状态 / 加载 / 错误 */
+  .empty{padding:48px 20px;text-align:center;color:var(--fg-3);font-size:13px}
+  .empty strong{display:block;color:var(--fg-2);font-weight:550;margin-bottom:4px}
+  .banner{margin-top:16px;border:1px solid rgba(239,106,114,.35);background:rgba(239,106,114,.08);color:#ffc4c7;border-radius:8px;padding:10px 14px;font-size:12.5px;display:none;align-items:center;gap:10px}
+  .banner.show{display:flex}
+  .skeleton{height:62px;border-top:1px solid var(--line-soft);background:linear-gradient(90deg,#101214 0%,#15181b 40%,#101214 80%);background-size:220% 100%;animation:sh 1.4s ease infinite}
+  @keyframes sh{0%{background-position:120% 0}100%{background-position:-40% 0}}
+
+  /* ── 弹层 ───────────────────────────────────────── */
+  .backdrop{position:fixed;inset:0;z-index:60;background:rgba(4,5,6,.62);backdrop-filter:blur(3px);display:none;place-items:center;padding:24px}
+  .backdrop.show{display:grid}
+  .modal{width:100%;max-width:420px;background:#0f1214;border:1px solid #262d33;border-radius:12px;padding:22px 22px 18px;box-shadow:0 24px 60px rgba(0,0,0,.55);animation:pop .16s ease-out}
+  @keyframes pop{from{opacity:0;transform:translateY(6px) scale(.985)}to{opacity:1;transform:none}}
+  .modal h3{margin:0 0 8px;font-size:14.5px;font-weight:600}
+  .modal p{margin:0;color:var(--fg-2);font-size:12.5px;line-height:1.65}
+  .modal ul{margin:8px 0 0;padding-left:16px;color:var(--fg-2);font-size:12px;max-height:150px;overflow:auto}
+  .modal ul li{margin:2px 0}
+  .modal-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:18px}
+
+  /* ── 提示条 ─────────────────────────────────────── */
+  .toast{position:fixed;left:50%;bottom:22px;transform:translateX(-50%) translateY(12px);z-index:70;display:flex;align-items:center;gap:14px;max-width:min(560px,calc(100vw - 32px));background:#171b1e;border:1px solid #2b3238;border-radius:9px;padding:10px 14px;font-size:12.5px;box-shadow:0 14px 34px rgba(0,0,0,.5);opacity:0;pointer-events:none;transition:opacity .18s,transform .18s}
+  .toast.show{opacity:1;transform:translateX(-50%) translateY(0);pointer-events:auto}
+  .toast.err{border-color:rgba(239,106,114,.45);color:#ffc9cc}
+  .toast button{border:none;background:transparent;color:var(--on);font-family:inherit;font-size:12.5px;font-weight:600;cursor:pointer;padding:0}
+  .toast button:hover{text-decoration:underline}
+
+  .foot{margin-top:26px;border-top:1px solid var(--line-soft);padding-top:14px;font-size:11.5px;color:var(--fg-3);line-height:1.8}
+  .foot code{font-family:var(--mono);font-size:10.5px;color:var(--fg-2)}
+
+  @media (max-width:760px){
+    .topbar-in,.wrap{padding:0 16px}
+    .summary{grid-template-columns:repeat(2,1fr)}
+    .stat:nth-child(3){border-left:none;border-top:1px solid var(--line-soft)}
+    .stat:nth-child(4){border-top:1px solid var(--line-soft)}
+    .search{margin-left:0;width:100%}
+    .search input{width:100%}
+    .group-head .loc{display:none}
+    .top-actions .badge{display:none}
+  }
+  @media (prefers-reduced-motion:reduce){
+    *{animation:none!important;transition:none!important}
+  }
+</style>
+</head>
+<body>
+
+<header class="topbar">
+  <div class="topbar-in">
+    <span class="mark" aria-hidden="true"></span>
+    <div class="brand">
+      <h1>开机自启控制台</h1>
+      <span>startup control · localhost only</span>
+    </div>
+    <div class="top-actions">
+      <span class="badge" id="permBadge"><span class="dot"></span><span id="permText">读取中</span></span>
+      <button class="btn ghost" id="btnRestore">全部恢复</button>
+      <button class="btn ghost" id="btnQuit">退出面板</button>
+    </div>
+  </div>
+</header>
+
+<main class="wrap">
+  <div class="banner" id="banner">
+    <span id="bannerText">无法连接本地服务</span>
+    <button class="btn ghost" id="btnRetry" style="margin-left:auto">重试</button>
+  </div>
+
+  <section class="summary" aria-label="概览">
+    <div class="stat mute"><div class="n" id="sTotal">–</div><div class="l">清单条目</div></div>
+    <div class="stat good"><div class="n" id="sOn">–</div><div class="l">当前启用</div></div>
+    <div class="stat warn"><div class="n" id="sAdvice">–</div><div class="l">建议关闭（仍启用）</div></div>
+    <div class="stat mute"><div class="n" id="sOff">–</div><div class="l">已禁用</div></div>
+  </section>
+
+  <div class="toolbar">
+    <div class="tabs" role="tablist" aria-label="筛选">
+      <button class="tab" role="tab" data-tab="all" aria-selected="true">全部 <span class="n" data-c="all"></span></button>
+      <button class="tab" role="tab" data-tab="run-user" aria-selected="false">注册表·用户 <span class="n" data-c="run-user"></span></button>
+      <button class="tab" role="tab" data-tab="run-machine" aria-selected="false">注册表·本机 <span class="n" data-c="run-machine"></span></button>
+      <button class="tab" role="tab" data-tab="startup" aria-selected="false">启动文件夹 <span class="n" data-c="startup"></span></button>
+      <button class="tab" role="tab" data-tab="service" aria-selected="false">服务 <span class="n" data-c="service"></span></button>
+      <button class="tab" role="tab" data-tab="task" aria-selected="false">计划任务 <span class="n" data-c="task"></span></button>
+      <button class="tab" role="tab" data-tab="system" aria-selected="false">系统 <span class="n" data-c="system"></span></button>
+    </div>
+    <label class="search">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"></circle><path d="M16.5 16.5L21 21"></path></svg>
+      <input id="q" type="search" placeholder="搜索名称 / 用途（按 / 聚焦）" autocomplete="off">
+    </label>
+  </div>
+
+  <div class="toolbar" style="margin-top:0">
+    <button class="btn primary" id="btnBulk">关闭全部建议项</button>
+    <span class="hint" style="margin:0">禁用 = 移出启动位置并备份，随时可恢复；不删除程序、不动系统必需项。</span>
+  </div>
+
+  <div id="list"></div>
+
+  <div class="foot">
+    备份位置：<code id="backupPath">–</code><br>
+    本面板只监听 <code>localhost</code>，不对外网开放；关闭窗口或点「退出面板」即停止服务。
+  </div>
+</main>
+
+<div class="backdrop" id="backdrop" aria-hidden="true">
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="mTitle">
+    <h3 id="mTitle">确认</h3>
+    <p id="mBody"></p>
+    <ul id="mList" hidden></ul>
+    <div class="modal-actions">
+      <button class="btn ghost" id="mCancel">取消</button>
+      <button class="btn danger" id="mOk">确认</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"><span id="toastText"></span><button id="toastAct" hidden>撤销</button></div>
+
+<script>
+const GROUPS = [
+  { id:'run-user',    title:'注册表 Run · 当前用户', loc:'HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run' },
+  { id:'run-machine', title:'注册表 Run · 本机',     loc:'HKLM\\Software\\Microsoft\\Windows\\CurrentVersion\\Run' },
+  { id:'startup',     title:'启动文件夹',            loc:'Startup / Common Startup' },
+  { id:'service',     title:'自动启动服务',          loc:'services.msc' },
+  { id:'task',        title:'计划任务',              loc:'taskschd.msc' },
+  { id:'system',      title:'系统策略',              loc:'Windows Update · HKLM 策略 + 服务' }
+];
+const ADVICE_TEXT = { off:'建议关闭', optional:'按需', keep:'建议保留' };
+
+let state = null;
+let tab = 'all';
+let q = '';
+let busy = false;
+let toastTimer = null;
+
+const $ = s => document.querySelector(s);
+const listEl = $('#list');
+
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+
+async function api(path, body) {
+  const opt = body === undefined ? {} : {
+    method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body:JSON.stringify(body)
+  };
+  const r = await fetch(path, opt);
+  const data = await r.json().catch(() => ({}));
+  if (!r.ok || data.ok === false) throw new Error(data.error || ('HTTP ' + r.status));
+  return data;
+}
+
+/* ── 数据加载 ───────────────────────────────── */
+async function load() {
+  listEl.innerHTML = '<div class="group"><div class="skeleton"></div><div class="skeleton"></div><div class="skeleton"></div><div class="skeleton"></div></div>';
+  try {
+    state = await api('/api/state');
+    $('#banner').classList.remove('show');
+    render();
+  } catch (e) {
+    listEl.innerHTML = '<div class="group"><div class="empty"><strong>读取失败</strong>' + esc(e.message) + '</div></div>';
+    $('#bannerText').textContent = '无法连接本地服务：' + e.message;
+    $('#banner').classList.add('show');
+    $('#permText').textContent = '离线';
+    $('#permBadge').classList.add('readonly');
+  }
+}
+
+/* ── 渲染 ───────────────────────────────────── */
+function render() {
+  const items = state.items;
+  const exists = items.filter(i => i.exists);
+  const on = exists.filter(i => i.enabled);
+  const adviceOn = exists.filter(i => i.enabled && i.advice === 'off');
+
+  $('#sTotal').textContent = exists.length;
+  $('#sOn').textContent = on.length;
+  $('#sAdvice').textContent = adviceOn.length;
+  $('#sOff').textContent = exists.length - on.length;
+
+  $('#permText').textContent = state.admin ? '管理员模式' : '只读模式';
+  $('#permBadge').classList.toggle('readonly', !state.admin);
+  $('#backupPath').textContent = state.backupDir;
+
+  document.querySelectorAll('.tab').forEach(t => {
+    const key = t.dataset.tab;
+    const n = key === 'all' ? exists.length : exists.filter(i => i.group === key).length;
+    const el = t.querySelector('.n');
+    if (el) el.textContent = n;
+    t.setAttribute('aria-selected', String(key === tab));
+  });
+
+  const bulkIds = filtered(items).filter(i => i.exists && i.enabled && i.advice === 'off' && i.editable && !i.protected);
+  const bulkBtn = $('#btnBulk');
+  bulkBtn.textContent = bulkIds.length ? `关闭当前视图建议项（${bulkIds.length}）` : '当前视图无建议关闭项';
+  bulkBtn.disabled = bulkIds.length === 0 || busy;
+
+  const visible = filtered(items);
+  if (!visible.length) {
+    listEl.innerHTML = '<div class="group"><div class="empty"><strong>没有匹配的条目</strong>换个关键词，或切回「全部」。</div></div>';
+    return;
+  }
+
+  listEl.innerHTML = GROUPS.map(g => {
+    const rows = visible.filter(i => i.group === g.id);
+    if (!rows.length) return '';
+    return `<section class="group">
+      <div class="group-head"><h2>${esc(g.title)}</h2><span class="cnt">${rows.length}</span><span class="loc">${esc(g.loc)}</span></div>
+      ${rows.map(rowHtml).join('')}
+    </section>`;
+  }).join('');
+}
+
+function filtered(items) {
+  const kw = q.trim().toLowerCase();
+  return items.filter(i => {
+    if (tab !== 'all' && i.group !== tab) return false;
+    if (!i.exists) return false;
+    if (!kw) return true;
+    return (i.label + ' ' + i.usage + ' ' + i.detail + ' ' + i.meta).toLowerCase().includes(kw);
+  });
+}
+
+function rowHtml(i) {
+  const chips = [];
+  if (i.protected) chips.push('<span class="chip lock">受保护</span>');
+  if (i.advice === 'off') chips.push('<span class="chip off">建议关闭</span>');
+  else if (i.advice === 'optional') chips.push('<span class="chip">按需</span>');
+  else chips.push('<span class="chip keep">建议保留</span>');
+  if (i.exists && !i.enabled) chips.push('<span class="chip state-off">已禁用</span>');
+  if (i.exists && !i.editable) chips.push('<span class="chip need">需管理员</span>');
+
+  const disabled = i.protected || !i.editable || busy;
+  const label = `${i.label}：${i.enabled ? '已启用，点击禁用' : '已禁用，点击启用'}`;
+
+  return `<div class="row ${i.advice === 'off' && i.enabled ? 'tone-off' : ''} ${i.enabled ? '' : 'off'}" data-id="${esc(i.id)}">
+    <div>
+      <div class="row-title"><span class="row-name">${esc(i.label)}</span><span class="chips">${chips.join('')}</span></div>
+      <div class="row-usage">${esc(i.usage)}${i.meta ? ' · ' + esc(i.meta) : ''}</div>
+      <div class="row-path ${i.exists ? '' : 'missing'}" title="${esc(i.detail)}">${esc(i.detail)}</div>
+    </div>
+    <button class="sw" role="switch" aria-checked="${i.enabled}" aria-label="${esc(label)}" title="${esc(i.protected ? '系统必需项，面板不提供关闭' : (i.editable ? label : '需要以管理员身份运行面板'))}" ${disabled ? 'disabled' : ''} data-id="${esc(i.id)}">
+      <span class="knob"></span>
+    </button>
+  </div>`;
+}
+
+/* ── 交互 ───────────────────────────────────── */
+document.querySelectorAll('.tab').forEach(t => {
+  t.addEventListener('click', () => { tab = t.dataset.tab; render(); });
+});
+
+$('#q').addEventListener('input', e => { q = e.target.value; render(); });
+
+document.addEventListener('keydown', e => {
+  if (e.key === '/' && document.activeElement !== $('#q')) { e.preventDefault(); $('#q').focus(); }
+  if (e.key === 'Escape') closeModal(false);
+});
+
+listEl.addEventListener('click', e => {
+  const sw = e.target.closest('.sw');
+  if (!sw || sw.disabled) return;
+  const item = state.items.find(i => i.id === sw.dataset.id);
+  if (!item) return;
+  setItem(item, !item.enabled);
+});
+
+function needConfirm(item, enable) {
+  return !enable && (item.group === 'service' || item.group === 'system');
+}
+
+async function setItem(item, enable, silent) {
+  if (busy) return;
+  if (!silent && needConfirm(item, enable)) {
+    const isSys = item.group === 'system';
+    const ok = await confirmModal({
+      title: isSys ? (enable ? '恢复 Windows 更新' : '关闭 Windows 更新') : (enable ? '启用服务' : '停止并禁用服务'),
+      body: isSys
+        ? (enable
+            ? '将删除自动更新策略，并把 wuauserv 恢复为「手动」、UsoSvc 恢复为「自动」。'
+            : '将写入自动更新策略（不自动下载/安装、不自动重启），并停止、禁用 wuauserv 与 UsoSvc。已安装的补丁不受影响，可随时在本面板恢复。')
+        : (enable
+            ? `将把「${item.label}」的启动类型改回「自动」，下次开机生效。`
+            : `将停止并禁用「${item.label}」。之后可随时在本面板恢复。`),
+      okText: isSys ? (enable ? '恢复更新' : '关闭更新') : (enable ? '启用' : '停止并禁用')
+    });
+    if (!ok) return;
+  }
+
+  busy = true;
+  try {
+    const res = await api('/api/item', { id:item.id, enabled:enable });
+    state.items = res.items;
+    render();
+    toast(`${item.label}：${res.message}`, {
+      undo: () => setItem(state.items.find(i => i.id === item.id), !enable, true)
+    });
+  } catch (e) {
+    toast(e.message, { error:true });
+  } finally {
+    busy = false;
+    render();
+  }
+}
+
+$('#btnBulk').addEventListener('click', async () => {
+  const ids = filtered(state.items)
+    .filter(i => i.exists && i.enabled && i.advice === 'off' && i.editable && !i.protected);
+  if (!ids.length) return;
+  const ok = await confirmModal({
+    title: `关闭 ${ids.length} 项`,
+    body: '以下条目会移出启动位置并备份，重启后不再自动运行。随时可用「全部恢复」还原。',
+    list: ids.map(i => i.label),
+    okText: `关闭 ${ids.length} 项`
+  });
+  if (!ok) return;
+
+  busy = true; render();
+  try {
+    const res = await api('/api/bulk', { ids: ids.map(i => i.id), enabled:false });
+    state.items = res.items;
+    toast(`已关闭 ${res.done} 项` + (res.errors.length ? `，${res.errors.length} 项失败` : ''), { error: res.errors.length > 0 });
+  } catch (e) {
+    toast(e.message, { error:true });
+  } finally {
+    busy = false; render();
+  }
+});
+
+$('#btnRestore').addEventListener('click', async () => {
+  const offs = state.items.filter(i => i.exists && !i.enabled);
+  if (!offs.length) { toast('当前没有已禁用的条目'); return; }
+  const ok = await confirmModal({
+    title: '全部恢复',
+    body: `将把清单中已禁用的 ${offs.length} 项全部恢复为启用，并重新启动对应服务/任务。`,
+    okText: '全部恢复'
+  });
+  if (!ok) return;
+  busy = true; render();
+  try {
+    const res = await api('/api/restore-all', {});
+    state.items = res.items;
+    toast(`已恢复 ${res.done} 项` + (res.errors.length ? `，${res.errors.length} 项需手动处理` : ''), { error: res.errors.length > 0 });
+  } catch (e) {
+    toast(e.message, { error:true });
+  } finally {
+    busy = false; render();
+  }
+});
+
+$('#btnQuit').addEventListener('click', async () => {
+  const ok = await confirmModal({ title:'退出面板', body:'将关闭本地面板服务，之后需要重新双击 start-panel.cmd 才能打开。', okText:'退出' });
+  if (!ok) return;
+  try { await api('/api/quit', {}); } catch (_) {}
+  document.body.innerHTML = '<div class="wrap"><div class="empty" style="padding-top:120px"><strong>面板已退出</strong>可以关闭此页面了。</div></div>';
+});
+
+$('#btnRetry').addEventListener('click', load);
+
+/* ── 弹层 ───────────────────────────────────── */
+let modalResolve = null;
+
+function confirmModal({ title, body, list, okText }) {
+  $('#mTitle').textContent = title;
+  $('#mBody').textContent = body;
+  const ul = $('#mList');
+  if (list && list.length) {
+    ul.hidden = false;
+    ul.innerHTML = list.map(x => `<li>${esc(x)}</li>`).join('');
+  } else {
+    ul.hidden = true; ul.innerHTML = '';
+  }
+  $('#mOk').textContent = okText || '确认';
+  $('#backdrop').classList.add('show');
+  $('#backdrop').setAttribute('aria-hidden','false');
+  setTimeout(() => $('#mOk').focus(), 30);
+  return new Promise(res => { modalResolve = res; });
+}
+
+function closeModal(v) {
+  if (!modalResolve) return;
+  $('#backdrop').classList.remove('show');
+  $('#backdrop').setAttribute('aria-hidden','true');
+  const r = modalResolve; modalResolve = null; r(v);
+}
+
+$('#mOk').addEventListener('click', () => closeModal(true));
+$('#mCancel').addEventListener('click', () => closeModal(false));
+$('#backdrop').addEventListener('click', e => { if (e.target === $('#backdrop')) closeModal(false); });
+
+/* ── 提示条 ─────────────────────────────────── */
+function toast(text, opts = {}) {
+  const el = $('#toast');
+  $('#toastText').textContent = text;
+  el.classList.toggle('err', !!opts.error);
+  const act = $('#toastAct');
+  if (opts.undo) {
+    act.hidden = false;
+    act.onclick = () => { act.hidden = true; el.classList.remove('show'); opts.undo(); };
+  } else {
+    act.hidden = true; act.onclick = null;
+  }
+  el.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => el.classList.remove('show'), opts.undo ? 8000 : 4200);
+}
+
+load();
+</script>
+</body>
+</html>

@@ -1,0 +1,10 @@
+[Unit]
+Description=Restart frpc after config change
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+ExecStartPre=/usr/bin/chown ubuntu:ubuntu /home/ubuntu/frp/frpc.toml
+ExecStartPre=/usr/bin/chmod 600 /home/ubuntu/frp/frpc.toml
+ExecStart=/usr/bin/docker restart frpc

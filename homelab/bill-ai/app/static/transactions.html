@@ -1,0 +1,143 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="color-scheme" content="light">
+  <title>流水 · Rong的账单</title>
+  <link rel="stylesheet" href="/static/style.css?v=20261022f">
+  <link rel="stylesheet" href="/static/dashboard.css?v=20261022f">
+  <link rel="stylesheet" href="/static/transactions.css?v=20261022f">
+</head>
+<body>
+  <div class="page dash tx-page">
+    <header class="masthead">
+      <a class="brand" href="/" aria-label="Rong的账单 首页">
+        <span class="brand-mark" aria-hidden="true">账</span>
+        <span class="brand-name">Rong的账单</span>
+      </a>
+      <nav class="dash-nav" aria-label="主导航">
+        <a class="ghost-link" href="/">记一笔</a>
+        <a class="ghost-link" href="/dashboard">总览</a>
+        <a class="ghost-link is-active" href="/transactions" aria-current="page">流水</a>
+        <a class="ghost-link" href="/settings">设置</a>
+      </nav>
+    </header>
+
+    <main>
+      <section class="tx-hero">
+        <div>
+          <p class="eyebrow">流水</p>
+          <h1 class="tx-title" id="txTitle">全部记录</h1>
+          <p class="tx-sub" id="txSub">正在读取…</p>
+        </div>
+        <button type="button" class="btn primary" id="addBtn">记一笔</button>
+      </section>
+
+      <div class="filter-mobile">
+        <button type="button" class="btn secondary sm" id="filterToggle" aria-expanded="false" aria-controls="filters">筛选</button>
+      </div>
+
+      <section class="filters" id="filters" aria-label="筛选">
+        <input type="month" id="monthFilter" aria-label="月份">
+        <select id="accountFilter" aria-label="账户"></select>
+        <select id="categoryFilter" aria-label="分类"></select>
+        <div class="type-chips" role="group" aria-label="类型">
+          <button type="button" class="chip is-on" data-type="">全部</button>
+          <button type="button" class="chip" data-type="expense">支出</button>
+          <button type="button" class="chip" data-type="income">收入</button>
+          <button type="button" class="chip" data-type="transfer">转账</button>
+        </div>
+        <input type="search" id="searchInput" placeholder="搜索商户或备注" aria-label="搜索">
+        <button type="button" class="chip" id="resetBtn">重置</button>
+      </section>
+
+      <div class="tx-summary" id="txSummary"></div>
+      <div id="txGroups"></div>
+      <div class="more-bar">
+        <button type="button" class="btn secondary" id="moreBtn" hidden>加载更多</button>
+      </div>
+    </main>
+
+    <footer class="footer">
+      <span>本地账本 · 数据留在自己的服务器。</span>
+      <span id="updatedAt"></span>
+    </footer>
+  </div>
+
+  <div class="sheet" id="editor" hidden>
+    <div class="sheet-backdrop" id="editorBackdrop"></div>
+    <div class="sheet-card" role="dialog" aria-modal="true" aria-labelledby="editorTitle">
+      <div class="sheet-grip" aria-hidden="true"></div>
+      <header class="sheet-head">
+        <div>
+          <p class="sheet-eyebrow">流水</p>
+          <h2 id="editorTitle">记一笔</h2>
+        </div>
+        <button type="button" class="sheet-close" id="editorClose" aria-label="关闭">×</button>
+      </header>
+
+      <form class="editor-form" id="editorForm">
+        <div class="type-chips" role="group" aria-label="类型">
+          <button type="button" class="chip" data-etype="expense">支出</button>
+          <button type="button" class="chip" data-etype="income">收入</button>
+          <button type="button" class="chip" data-etype="transfer">转账</button>
+        </div>
+
+        <div class="field-row field-row-3">
+          <label class="field">
+            <span>金额</span>
+            <input id="fAmount" inputmode="decimal" placeholder="0.00" required>
+          </label>
+          <label class="field">
+            <span>日期</span>
+            <input id="fDate" type="date" required>
+          </label>
+          <label class="field field-time">
+            <span>时间</span>
+            <input id="fTime" type="time">
+          </label>
+        </div>
+
+        <div class="field-row">
+          <label class="field">
+            <span id="accountLabel">账户</span>
+            <select id="fAccount" required></select>
+          </label>
+          <label class="field" id="toAccountField" hidden>
+            <span>转入账户</span>
+            <select id="fToAccount"></select>
+          </label>
+        </div>
+
+        <div class="field-row">
+          <label class="field" id="categoryField">
+            <span>分类</span>
+            <select id="fCategory"></select>
+          </label>
+          <label class="field">
+            <span>商户</span>
+            <input id="fMerchant" placeholder="例如 便利店">
+          </label>
+        </div>
+
+        <label class="field">
+          <span>备注</span>
+          <input id="fNote" placeholder="可选">
+        </label>
+
+        <p class="editor-error" id="editorError" hidden></p>
+      </form>
+
+      <footer class="editor-actions">
+        <button type="button" class="btn danger" id="deleteBtn" hidden>删除</button>
+        <span class="spacer"></span>
+        <button type="button" class="btn secondary" id="cancelBtn">取消</button>
+        <button type="button" class="btn primary" id="saveBtn">保存</button>
+      </footer>
+    </div>
+  </div>
+
+  <script src="/static/transactions.js?v=20261022f"></script>
+</body>
+</html>

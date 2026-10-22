@@ -1,0 +1,9 @@
+[Unit]
+Description=Watch frpc.toml and restart frpc on change
+
+[Path]
+PathChanged=/home/ubuntu/frp/frpc.toml
+Unit=frpc-config.service
+
+[Install]
+WantedBy=multi-user.target

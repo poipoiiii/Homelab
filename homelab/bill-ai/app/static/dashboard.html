@@ -1,0 +1,127 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="color-scheme" content="light">
+  <title>财务总览 · Rong的账单</title>
+  <link rel="stylesheet" href="/static/style.css?v=20261022f">
+  <link rel="stylesheet" href="/static/dashboard.css?v=20261022f">
+</head>
+<body>
+  <div class="page dash">
+    <header class="masthead">
+      <a class="brand" href="/" aria-label="Rong的账单 首页">
+        <span class="brand-mark" aria-hidden="true">账</span>
+        <span class="brand-name">Rong的账单</span>
+      </a>
+      <nav class="dash-nav" aria-label="主导航">
+        <a class="ghost-link" href="/">记一笔</a>
+        <a class="ghost-link is-active" href="/dashboard" aria-current="page">总览</a>
+        <a class="ghost-link" href="/transactions">流水</a>
+        <a class="ghost-link" href="/settings">设置</a>
+        <button class="ghost-link" id="customizeBtn" aria-expanded="false" aria-controls="customPop">自定义</button>
+      </nav>
+    </header>
+
+    <main>
+      <section class="dash-hero" aria-label="净资产概览">
+        <div class="hero-main">
+          <p class="eyebrow">净资产 · CNY</p>
+          <p class="networth" id="networth">—</p>
+          <p class="hero-sub" id="heroSub">正在汇总…</p>
+        </div>
+        <div class="accounts" id="accounts" aria-label="账户余额"></div>
+      </section>
+
+      <div class="dash-toolbar">
+        <div class="month-switch" role="group" aria-label="选择月份">
+          <button type="button" id="prevMonth" aria-label="上个月">‹</button>
+          <span id="monthLabel">—</span>
+          <button type="button" id="nextMonth" aria-label="下个月">›</button>
+        </div>
+        <p class="toolbar-note" id="toolbarNote"></p>
+      </div>
+
+      <section class="kpis" id="kpis" data-card="kpis" aria-label="月度指标"></section>
+
+      <section class="panel" data-card="trend">
+        <header class="panel-head">
+          <h2>近 12 个月收支</h2>
+          <div class="legend">
+            <span><i class="dot out"></i>支出</span>
+            <span><i class="dot in"></i>收入</span>
+          </div>
+        </header>
+        <div class="chart" id="chart" role="group" aria-label="近 12 个月收支柱状图，点按月份查看流水"></div>
+      </section>
+
+      <div class="split">
+        <section class="panel" data-card="cats">
+          <header class="panel-head">
+            <h2>分类构成</h2>
+            <span class="panel-meta" id="catsMeta"></span>
+          </header>
+          <div class="cat-list" id="cats"></div>
+        </section>
+
+        <section class="panel" data-card="recent">
+          <header class="panel-head">
+            <h2>最近交易</h2>
+            <a class="panel-link" href="/transactions">全部 ↗</a>
+          </header>
+          <ul class="tx-list" id="recent"></ul>
+        </section>
+      </div>
+    </main>
+
+    <footer class="footer">
+      <span>本地账本 · 数据留在自己的服务器。</span>
+      <span id="updatedAt"></span>
+    </footer>
+  </div>
+
+  <div class="pop" id="customPop" hidden role="dialog" aria-label="自定义看板">
+    <p class="pop-title">显示模块</p>
+    <label><input type="checkbox" data-toggle="kpis"> 月度指标</label>
+    <label><input type="checkbox" data-toggle="trend"> 收支趋势</label>
+    <label><input type="checkbox" data-toggle="cats"> 分类构成</label>
+    <label><input type="checkbox" data-toggle="recent"> 最近交易</label>
+    <p class="pop-hint">选择会记在这台浏览器里</p>
+  </div>
+
+  <div class="sheet" id="txSheet" hidden>
+    <div class="sheet-backdrop" id="sheetBackdrop"></div>
+    <div class="sheet-card" role="dialog" aria-modal="true" aria-labelledby="sheetTitle">
+      <div class="sheet-grip" aria-hidden="true"></div>
+      <header class="sheet-head">
+        <div>
+          <p class="sheet-eyebrow">流水明细</p>
+          <h3 id="sheetTitle">—</h3>
+        </div>
+        <button type="button" class="sheet-close" id="sheetClose" aria-label="关闭流水明细">×</button>
+      </header>
+      <div class="sheet-stats" id="sheetStats"></div>
+      <div class="sheet-filter" role="group" aria-label="筛选交易类型">
+        <button type="button" class="chip is-on" data-filter="all">全部</button>
+        <button type="button" class="chip" data-filter="out">支出</button>
+        <button type="button" class="chip" data-filter="in">收入</button>
+      </div>
+      <div class="sheet-selects">
+        <label class="sheet-select">
+          <span>账户</span>
+          <select id="sheetAccount"><option value="">全部账户</option></select>
+        </label>
+        <label class="sheet-select">
+          <span>分类</span>
+          <select id="sheetCategory"><option value="">全部分类</option></select>
+        </label>
+      </div>
+      <ul class="sheet-list" id="sheetList"></ul>
+      <p class="sheet-empty" id="sheetEmpty" hidden>这个月没有记录</p>
+    </div>
+  </div>
+
+  <script src="/static/dashboard.js?v=20261022f"></script>
+</body>
+</html>

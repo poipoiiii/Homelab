@@ -1,0 +1,11 @@
+services:
+  frpc:
+    image: fatedier/frpc:v0.65.0
+    container_name: frpc
+    labels:
+      dev.dozzle.group: "入口与运维"
+    restart: unless-stopped
+    network_mode: host
+    volumes:
+      - /home/ubuntu/frp/frpc.toml:/etc/frp/frpc.toml:ro
+    command: ["-c", "/etc/frp/frpc.toml"]

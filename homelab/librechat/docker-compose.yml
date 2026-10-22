@@ -1,0 +1,45 @@
+# LibreChat —— 接 lab-tools（MCP）的聊天前端
+# 仅监听本机回环；通过 tailnet serve 8454 给手机用
+services:
+  librechat:
+    image: ghcr.io/danny-avila/librechat-dev:latest
+    container_name: librechat
+    labels:
+      dev.dozzle.group: "AI 助手"
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:3080:3080"
+    env_file: .env
+    environment:
+      - HOST=0.0.0.0
+      - PORT=3080
+      - MONGO_URI=mongodb://librechat-mongo:27017/LibreChat
+      - CONFIG_PATH=/app/librechat.yaml
+    volumes:
+      - ./librechat.yaml:/app/librechat.yaml:ro
+      - ./uploads:/app/uploads
+      - ./logs:/app/api/logs
+    depends_on:
+      - librechat-mongo
+    networks:
+      - default
+      - labtools
+
+  librechat-mongo:
+    image: mongo:7
+    container_name: librechat-mongo
+    labels:
+      dev.dozzle.group: "AI 助手"
+    restart: unless-stopped
+    volumes:
+      - librechat_mongo:/data/db
+    networks:
+      - default
+
+networks:
+  labtools:
+    external: true
+    name: lab-tools_default
+
+volumes:
+  librechat_mongo:

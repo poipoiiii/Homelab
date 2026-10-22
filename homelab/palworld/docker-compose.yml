@@ -1,0 +1,16 @@
+# Palworld (幻兽帕鲁) —— 社区成熟镜像 thijsvanloef
+services:
+  palworld:
+    image: thijsvanloef/palworld-server-docker:latest
+    container_name: palworld
+    restart: unless-stopped
+    ports:
+      - 8211:8211/udp
+      - 8211:8211/tcp
+    environment:
+      PUID: 1000
+      PGID: 1000
+    volumes:
+      - palworld_data:/palworld
+volumes:
+  palworld_data:

@@ -1,0 +1,66 @@
+{
+  "HKCU|TapTap": {
+    "Value": "E:\\game_\\taptap_\\TapTap\\TapTap.exe --launch-context=startup",
+    "Kind": "String"
+  },
+  "HKCU|quark": {
+    "Value": "\"E:\\app_no_use\\Quark\\quark.exe\" --launch-from=loginitem --brand-clouddrive",
+    "Kind": "String"
+  },
+  "HKCU|QuarkUpdaterTaskUser1.0.0.21": {
+    "Value": "\"C:\\Users\\USER\\AppData\\Local\\QuarkUpdater\\QuarkUpdater\\1.0.0.21\\updater.exe\" --wake --enable-logging --vmodule=*/components/winhttp/*=1,*/components/update_client/*=2,*/chrome/updater/*=2,*/chrome/updater/quark/*=2,*/quark/utils/*=2",
+    "Kind": "String"
+  },
+  "HKCU|Battle.net": {
+    "Value": "\"D:\\战网\\Battle.net\\Battle.net.exe\" --autostarted",
+    "Kind": "String"
+  },
+  "HKCU|Steam": {
+    "Value": "\"E:\\steam_\\steam.exe\" -silent",
+    "Kind": "String"
+  },
+  "HKCU|QQMusic": {
+    "Value": "\"E:\\app_no_use\\qq_music_\\QQMusic\\QQMusic.exe\" /background",
+    "Kind": "String"
+  },
+  "HKCU|MicrosoftEdgeAutoLaunch_28CC4C91291F97998E40A29656715B1C": {
+    "Value": "\"C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe\" --no-startup-window --win-session-start",
+    "Kind": "String"
+  },
+  "HKCU|FilmoraTray": {
+    "Value": "\"D:\\剪辑\\Wondershare\\Wondershare FilmoraCN\\15.2.16.17980\\FilmoraTray.exe\" --autostart",
+    "Kind": "String"
+  },
+  "HKLM|TapTap": {
+    "Value": "E:\\game_\\taptap_\\TapTap\\TapTap.exe",
+    "Kind": "String"
+  },
+  "HKLM|MuseHub": {
+    "Value": "\"C:\\Program Files\\MuseHub\\current\\MuseHub.exe\" \"----ms-protocol:ms-encodedlaunch:App?ContractId=Windows.StartupTask&TaskId=MuseHub\"",
+    "Kind": "String"
+  },
+  "HKLM32|electron.app.leigod": {
+    "Value": "E:\\app_for_First\\LeiGod_Acc\\leigod.exe -autoLaunch",
+    "Kind": "String"
+  },
+  "HKLM32|Wondershare Helper Compact.exe": {
+    "Value": "C:\\Program Files (x86)\\Common Files\\Wondershare\\Wondershare Helper Compact\\WSHelper.exe",
+    "Kind": "String"
+  },
+  "HKLM32|PICOConnect": {
+    "Value": "D:\\pico_VR\\PICO Connect\\PICO Connect.exe --openAsHidden",
+    "Kind": "String"
+  },
+  "HKCU|OneDrive": {
+    "Value": "\"C:\\Program Files\\Microsoft OneDrive\\OneDrive.exe\" /background",
+    "Kind": "String"
+  },
+  "HKCU|com.lbyczf.clashwin": {
+    "Value": "E:\\app_for_First\\clash_for\\Clash for Windows\\Clash for Windows.exe",
+    "Kind": "String"
+  },
+  "HKCU|WorkBuddy.WorkBuddy": {
+    "Value": "D:\\workbuddy_\\WorkBuddy.exe",
+    "Kind": "String"
+  }
+}

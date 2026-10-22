@@ -1,0 +1,20 @@
+# Rong的账单 —— 账单识别 + 本地账本（SQLite），不依赖其他容器
+# 访问：本机 127.0.0.1:8091，tailnet 入口 https://home.example-tailnet.ts.net:8451
+services:
+  rong-ledger:
+    build: .
+    container_name: rong-ledger
+    labels:
+      dev.dozzle.group: "家庭服务"
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      - TZ=Asia/Shanghai
+      - DB_PATH=/data/bill.db
+    ports:
+      - "127.0.0.1:8091:8091"
+    volumes:
+      - bill_ai_data:/data
+
+volumes:
+  bill_ai_data:

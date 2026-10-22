@@ -1,0 +1,27 @@
+# Pinchflat —— 按频道/播放列表定时抓取 YouTube，产出 Jellyfin 可识别的分集结构
+# config 与 SQLite 放 ext4 命名卷；下载目录直连 D 盘媒体盘（9P 可写，已获用户同意）
+# 仅监听本机回环，不进 frp；首次打开 Web UI 后建 Media Profile，选 "Media Center" 预设
+services:
+  pinchflat:
+    image: ghcr.io/kieraneglin/pinchflat:latest
+    container_name: pinchflat
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8945:8945"
+    environment:
+      - TZ=Asia/Shanghai
+      - UMASK=022
+      # 并发降到 1，降低被 Google 限流的概率
+      - YT_DLP_WORKER_CONCURRENCY=1
+    # Homarr 自动发现时用这里的地址生成卡片（tailscale serve 的 8455 端口）
+    labels:
+      dev.dozzle.group: "影音"
+      homarr.name: "Pinchflat"
+      homarr.href: "https://home.example-tailnet.ts.net:8455"
+      homarr.group: "私人服务"
+      homarr.description: "YouTube 下载"
+    volumes:
+      - pinchflat_config:/config
+      - /mnt/d/yt_video_:/downloads
+volumes:
+  pinchflat_config:

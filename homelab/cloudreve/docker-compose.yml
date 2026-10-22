@@ -1,0 +1,24 @@
+# Cloudreve —— 私人网盘（图片上传/文件夹/分享）
+# 首次注册的账号会成为管理员；注册完成前不要暴露到公网
+services:
+  cloudreve:
+    image: cloudreve/cloudreve:latest
+    container_name: cloudreve
+    restart: unless-stopped
+    user: "1000:1000"
+    ports:
+      - "127.0.0.1:8080:5212"
+    volumes:
+      # 配置与 SQLite 数据库留在 ext4（9P 上锁库会坏）
+      - /home/ubuntu/cloudreve/data:/cloudreve/data
+      # 仅上传文件目录直连 D 盘，方便 Windows 侧直接查看（AGENTS.md 6.4 的例外）
+      - /mnt/d/media/cloudreve:/cloudreve/data/uploads
+    environment:
+      - TZ=Asia/Shanghai
+    # Homarr 自动发现时用这里的地址生成卡片（tailnet 改名后需同步修改）
+    labels:
+      dev.dozzle.group: "家庭服务"
+      homarr.name: "Cloudreve"
+      homarr.href: "https://home.example-tailnet.ts.net:8443"
+      homarr.group: "私人服务"
+      homarr.description: "私人网盘"

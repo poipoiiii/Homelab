@@ -1,0 +1,10 @@
+[Unit]
+Description=Minecraft container backup
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/mc-backup.sh
+Nice=10
+IOSchedulingClass=idle

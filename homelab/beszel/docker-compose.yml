@@ -1,0 +1,43 @@
+# Beszel —— 轻量主机监控（CPU/内存/磁盘/网络 + 容器统计 + 历史曲线）
+# 部署顺序：
+#   1) docker compose up -d beszel        先只起 Hub，打开 http://localhost:8090 注册管理员
+#   2) Hub 里 Add System → 复制 Public Key / Token 填进同目录 .env
+#   3) docker compose up -d               再起 agent，在 Hub 里把 Host/IP 填 /beszel_socket/beszel.sock
+# 数据都在命名卷（ext4），不上 C 盘、不写 /mnt/d
+services:
+  beszel:
+    image: henrygd/beszel:latest
+    container_name: beszel
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8090:8090"
+    environment:
+      - TZ=Asia/Shanghai
+      - APP_URL=http://localhost:8090
+    volumes:
+      - beszel_data:/beszel_data
+      - beszel_socket:/beszel_socket
+
+  # agent 必须用 host 网络才能读到真实网卡流量；与 Hub 之间走 unix socket，不额外开端口
+  beszel-agent:
+    image: henrygd/beszel-agent:latest
+    container_name: beszel-agent
+    restart: unless-stopped
+    network_mode: host
+    depends_on:
+      - beszel
+    environment:
+      - TZ=Asia/Shanghai
+      - LISTEN=/beszel_socket/beszel.sock
+      - HUB_URL=http://localhost:8090
+      - KEY=${BESZEL_KEY:?先在 .env 里填 BESZEL_KEY}
+      - TOKEN=${BESZEL_TOKEN:?先在 .env 里填 BESZEL_TOKEN}
+    volumes:
+      - beszel_agent_data:/var/lib/beszel-agent
+      - beszel_socket:/beszel_socket
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+
+volumes:
+  beszel_data:
+  beszel_agent_data:
+  beszel_socket:

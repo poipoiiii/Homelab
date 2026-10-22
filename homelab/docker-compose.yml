@@ -1,0 +1,16 @@
+# Dockge —— 你的私有 Docker 可视化控制台（控制面）
+# 作用：用网页管理本机所有 docker compose 堆栈；配合 frp 可远程打开
+# 部署：在 WSL Ubuntu 内，把本目录作为 ~/homelab 后执行 docker compose up -d
+services:
+  dockge:
+    image: louislam/dockge:1
+    container_name: dockge
+    restart: unless-stopped
+    ports:
+      - 5001:5001                       # 管理页面端口（frp 会把它露到公网）
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock   # 宿主机 docker 套接字：Dockge 靠它控制 docker（=宿主机 root 权限，注意安全）
+      - dockge_data:/app/data                          # Dockge 自身数据
+      - /home/ubuntu/homelab/stacks:/app/stacks       # 你的 compose 文件目录（放在 ext4 上）
+volumes:
+  dockge_data:

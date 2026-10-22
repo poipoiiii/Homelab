@@ -1,0 +1,80 @@
+# Firefly III —— 自建记账（账单）
+# 数据：PostgreSQL + 上传附件都在命名卷（ext4），不写 /mnt/d
+# 访问：本机 127.0.0.1:8083，tailnet 入口 https://home.example-tailnet.ts.net:8450
+# 首次启动后打开页面注册第一个账号，该账号即管理员
+services:
+  firefly:
+    image: fireflyiii/core:latest
+    container_name: firefly
+    restart: unless-stopped
+    environment:
+      - TZ=Asia/Shanghai
+      - APP_ENV=production
+      - APP_DEBUG=false
+      - APP_URL=${FIREFLY_APP_URL}
+      - APP_KEY=${FIREFLY_APP_KEY}
+      - DB_CONNECTION=pgsql
+      - DB_HOST=firefly-db
+      - DB_PORT=5432
+      - DB_DATABASE=firefly
+      - DB_USERNAME=firefly
+      - DB_PASSWORD=${FIREFLY_DB_PASSWORD}
+      - DEFAULT_LANGUAGE=zh_CN
+      - DEFAULT_LOCALE=zh_CN
+      - TRUSTED_PROXIES=**
+      - SITE_OWNER=${FIREFLY_SITE_OWNER}
+    ports:
+      - "127.0.0.1:8083:8080"
+    volumes:
+      # 交易附件/导出文件
+      - firefly_upload:/var/www/html/storage/upload
+    depends_on:
+      firefly-db:
+        condition: service_healthy
+    networks:
+      - firefly
+
+  firefly-db:
+    image: postgres:16-alpine
+    container_name: firefly-db
+    restart: unless-stopped
+    environment:
+      - TZ=Asia/Shanghai
+      - POSTGRES_DB=firefly
+      - POSTGRES_USER=firefly
+      - POSTGRES_PASSWORD=${FIREFLY_DB_PASSWORD}
+    volumes:
+      - firefly_db:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U firefly -d firefly"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks:
+      - firefly
+
+  # CSV 导入器：拿到 API Token 后再启用（docker compose --profile importer up -d）
+  firefly-importer:
+    image: fireflyiii/data-importer:latest
+    container_name: firefly-importer
+    restart: unless-stopped
+    profiles: ["importer"]
+    environment:
+      - TZ=Asia/Shanghai
+      - FIREFLY_III_URL=http://firefly:8080
+      - VANITY_URL=${IMPORTER_VANITY_URL}
+      - FIREFLY_III_ACCESS_TOKEN=${FIREFLY_TOKEN}
+      - NO_SSL_VERIFY=false
+    ports:
+      - "127.0.0.1:8084:8080"
+    depends_on:
+      - firefly
+    networks:
+      - firefly
+
+networks:
+  firefly:
+
+volumes:
+  firefly_upload:
+  firefly_db:

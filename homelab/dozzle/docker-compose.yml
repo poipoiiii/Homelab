@@ -1,0 +1,18 @@
+# Dozzle —— 网页实时看所有容器日志（替代 docker logs -f）
+# 开启 DOZZLE_ENABLE_ACTIONS 后可直接在页面上 start / stop / restart / remove / update 容器
+# 注意：可写挂载 docker.sock 等价于宿主机 root 权限，只监听本机回环，绝不要加进 frp
+services:
+  dozzle:
+    image: amir20/dozzle:latest
+    container_name: dozzle
+    labels:
+      dev.dozzle.group: "入口与运维"
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8888:8080"
+    environment:
+      - TZ=Asia/Shanghai
+      - DOZZLE_NO_ANALYTICS=true
+      - DOZZLE_ENABLE_ACTIONS=true
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock

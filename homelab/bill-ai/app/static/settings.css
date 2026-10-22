@@ -1,0 +1,144 @@
+.settings-page {
+  padding-bottom: 72px;
+}
+
+.settings-hero {
+  padding: 48px 0 26px;
+  border-bottom: 1px solid var(--hairline);
+}
+
+.settings-title {
+  margin: 8px 0 0;
+  font-family: var(--serif);
+  font-size: clamp(30px, 4.4vw, 42px);
+  font-weight: 400;
+  line-height: 1.05;
+  letter-spacing: -1px;
+}
+
+.settings-sub {
+  margin: 10px 0 0;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.panel-block {
+  margin-top: 36px;
+}
+
+.block-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 6px;
+}
+
+.block-head h2 {
+  margin: 0;
+  font-family: var(--serif);
+  font-size: 21px;
+  font-weight: 400;
+  letter-spacing: -0.3px;
+}
+
+.block-hint {
+  margin: 12px 0 0;
+  color: var(--muted-soft);
+  font-size: 12px;
+}
+
+.setting-list {
+  border-top: 1px solid var(--hairline);
+}
+
+.setting-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 14px 0;
+  border: 0;
+  border-bottom: 1px solid var(--hairline-soft);
+  background: none;
+  text-align: left;
+  color: inherit;
+  cursor: pointer;
+}
+
+.setting-row:hover {
+  background: var(--surface-soft);
+}
+
+.setting-row:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: -2px;
+}
+
+.setting-name {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+  overflow: hidden;
+}
+
+.setting-name span:first-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.setting-tag {
+  flex: none;
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: var(--surface-card);
+  color: var(--muted);
+  font-size: 10.5px;
+}
+
+.setting-value {
+  color: var(--body);
+  font-family: var(--serif);
+  font-size: 15px;
+  letter-spacing: -0.2px;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+.setting-count {
+  color: var(--muted-soft);
+  font-size: 11.5px;
+  text-align: right;
+  white-space: nowrap;
+}
+
+.editor-form .check {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  color: var(--body);
+  font-size: 13.5px;
+}
+
+.editor-form .check input {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--primary);
+}
+
+@media (max-width: 560px) {
+  .settings-hero {
+    padding-top: 32px;
+  }
+
+  .setting-row {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .setting-count {
+    display: none;
+  }
+}
