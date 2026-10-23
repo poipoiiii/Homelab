@@ -1,0 +1,64 @@
+# 电源面板 —— 按组一键 stop/start，用来临时释放内存
+# 独立于被控栈：AI 全套关掉后，这个面板仍然在线，可以再把它们启动回来
+# 权限拆分：读代理只能查容器；写代理只能 start/stop，不开放 create/kill/exec
+services:
+  power:
+    build: .
+    container_name: power
+    labels:
+      dev.dozzle.group: "入口与运维"
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8092:8092"
+    volumes:
+      # 头像/图标（换图无需重建镜像）
+      - /home/ubuntu/branding:/branding:ro
+    environment:
+      - TZ=Asia/Shanghai
+      - DOCKER_PROXY_READ=http://power-proxy-read:2375
+      - DOCKER_PROXY_WRITE=http://power-proxy-write:2375
+      # 宿主机 systemd 代理（MCSManager / 1Panel），由 host-agent 提供
+      - HOST_AGENT_URL=http://host.docker.internal:8093
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      - power-proxy-read
+      - power-proxy-write
+
+  power-proxy-read:
+    image: tecnativa/docker-socket-proxy:latest
+    container_name: power-proxy-read
+    labels:
+      dev.dozzle.group: "入口与运维"
+    restart: unless-stopped
+    environment:
+      - CONTAINERS=1
+      - INFO=1
+      - VERSION=1
+      - POST=0
+      - EXEC=0
+      - VOLUMES=0
+      - NETWORKS=0
+      - IMAGES=0
+      - SYSTEM=0
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+
+  power-proxy-write:
+    image: tecnativa/docker-socket-proxy:latest
+    container_name: power-proxy-write
+    labels:
+      dev.dozzle.group: "入口与运维"
+    restart: unless-stopped
+    environment:
+      - CONTAINERS=0
+      - ALLOW_START=1
+      - ALLOW_STOP=1
+      - POST=1
+      - EXEC=0
+      - VOLUMES=0
+      - NETWORKS=0
+      - IMAGES=0
+      - SYSTEM=0
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
