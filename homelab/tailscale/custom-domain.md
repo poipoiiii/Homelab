@@ -156,7 +156,7 @@ DNS 记录可保留（不影响），或删除。
 
 这条和上面的 tailnet 方案互不影响：保留 frp 时，给公网入口加一层 HTTPS，避免 Jellyfin 在公网明文跑。
 
-**现状**：VPS `203.0.113.10` 的 80/443 已被现有 nginx 占用（`https://example.com` 是“个人站点”站点），**不要再装 Caddy**，直接在 nginx 里加一个 server 块。
+**现状**：VPS `203.0.113.10` 的 80/443 已被现有 nginx 占用（`https://example.com` 是个人站点），**不要再装 Caddy**，直接在 nginx 里加一个 server 块。
 
 ### 6.1 DNS
 
