@@ -1,10 +1,17 @@
 # Pinchflat —— 按频道/播放列表定时抓取 YouTube，产出 Jellyfin 可识别的分集结构
 # config 与 SQLite 放 ext4 命名卷；下载目录直连 D 盘媒体盘（9P 可写，已获用户同意）
 # 仅监听本机回环，不进 frp；首次打开 Web UI 后建 Media Profile，选 "Media Center" 预设
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
 services:
   pinchflat:
     image: ghcr.io/kieraneglin/pinchflat:latest
     container_name: pinchflat
+    logging: *default-logging
     restart: unless-stopped
     ports:
       - "127.0.0.1:8945:8945"

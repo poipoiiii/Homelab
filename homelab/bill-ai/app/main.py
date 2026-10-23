@@ -5,6 +5,8 @@ import io
 import json
 import os
 import re
+import sqlite3
+import tempfile
 import time
 from datetime import date as date_cls
 from datetime import timedelta
@@ -12,10 +14,11 @@ from typing import Any
 
 import httpx
 from fastapi import FastAPI, File, HTTPException, UploadFile
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
 from openpyxl import load_workbook
 from pydantic import BaseModel, Field
+from starlette.background import BackgroundTask
 
 from app import store
 
@@ -868,6 +871,70 @@ async def transactions(
     return store.list_transactions(
         month=month, start=start, end=end, account_id=account_id,
         category_id=category_id, txn_type=type, query=q, limit=limit, offset=offset,
+    )
+
+
+TYPE_LABEL = {"expense": "支出", "income": "收入", "transfer": "转账"}
+
+
+@app.get("/api/export.csv")
+async def export_csv(
+    month: str | None = None,
+    start: str | None = None,
+    end: str | None = None,
+    account_id: int | None = None,
+    category_id: int | None = None,
+    type: str | None = None,
+    q: str | None = None,
+) -> Response:
+    data = store.list_transactions(
+        month=month, start=start, end=end, account_id=account_id,
+        category_id=category_id, txn_type=type, query=q, limit=20000,
+    )
+    buffer = io.StringIO()
+    buffer.write("\ufeff")  # BOM，Excel 打开不乱码
+    writer = csv.writer(buffer)
+    writer.writerow(["日期", "时间", "类型", "金额(元)", "账户", "对方账户",
+                     "分类", "商户", "说明", "备注", "外部单号"])
+    for item in reversed(data["items"]):
+        writer.writerow([
+            item["date"], item["time"], TYPE_LABEL.get(item["type"], item["type"]),
+            item["amount"], item["account"], item["to_account"], item["category"],
+            item["merchant"], item["description"], item["note"], item["external_id"] or "",
+        ])
+    filename = f"bill-{date_cls.today().isoformat()}.csv"
+    return Response(
+        content=buffer.getvalue().encode("utf-8"),
+        media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+@app.get("/api/backup.db")
+async def backup_db() -> FileResponse:
+    """用 SQLite 在线备份生成一致的快照，供备份脚本拉取。"""
+    handle = tempfile.NamedTemporaryFile(prefix="bill-", suffix=".db", delete=False)
+    handle.close()
+    source = store.connect()
+    target = sqlite3.connect(handle.name)
+    try:
+        source.backup(target)
+    finally:
+        target.close()
+        source.close()
+
+    def cleanup() -> None:
+        try:
+            os.remove(handle.name)
+        except OSError:
+            pass
+
+    filename = f"bill-{date_cls.today().isoformat()}.db"
+    return FileResponse(
+        handle.name,
+        media_type="application/octet-stream",
+        filename=filename,
+        background=BackgroundTask(cleanup),
     )
 
 

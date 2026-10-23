@@ -1,10 +1,17 @@
 # Dockge —— 你的私有 Docker 可视化控制台（控制面）
 # 作用：用网页管理本机所有 docker compose 堆栈；配合 frp 可远程打开
 # 部署：在 WSL Ubuntu 内，把本目录作为 ~/homelab 后执行 docker compose up -d
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
 services:
   dockge:
     image: louislam/dockge:1
     container_name: dockge
+    logging: *default-logging
     restart: unless-stopped
     ports:
       - 5001:5001                       # 管理页面端口（frp 会把它露到公网）

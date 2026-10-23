@@ -1,9 +1,16 @@
 # LibreChat —— 接 lab-tools（MCP）的聊天前端
 # 仅监听本机回环；通过 tailnet serve 8454 给手机用
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
 services:
   librechat:
     image: ghcr.io/danny-avila/librechat-dev:latest
     container_name: librechat
+    logging: *default-logging
     labels:
       dev.dozzle.group: "AI 助手"
     restart: unless-stopped
@@ -32,6 +39,7 @@ services:
   librechat-mongo:
     image: mongo:7
     container_name: librechat-mongo
+    logging: *default-logging
     labels:
       dev.dozzle.group: "AI 助手"
     restart: unless-stopped

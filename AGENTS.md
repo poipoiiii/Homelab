@@ -44,6 +44,7 @@ d:\ubuntu_\                          Windows 侧工作目录（本仓库）
 │  │  ├─ Dockerfile
 │  │  ├─ app\                        FastAPI + 静态页面
 │  │  └─ DESIGN.md                   页面设计系统（不参与运行）
+│  ├─ backup\                        统一备份脚本 + systemd timer（bill-ai，可扩展）
 │  └─ palworld\docker-compose.yml    Palworld 服务器（端口 8211）
 └─ .cache\                           所有非源码产物（下载/导出/日志/临时，规则见 5.4）
    ├─ downloads\                     下载的 rootfs、整合包、镜像 tar
@@ -114,29 +115,58 @@ wsl.exe --version
 
 ## 4. 服务与端口
 
-| 服务 | 镜像 | 端口 | 数据位置 |
-| --- | --- | --- | --- |
-| Dockge | `louislam/dockge:1` | 5001/tcp | 命名卷 `dockge_data` + `~/homelab/stacks` |
-| Jellyfin | `jellyfin/jellyfin:latest` | 8096/tcp | 命名卷 config/cache；媒体只读：`/mnt/d/for_jellyfin`（主力片源，Shows 库根 `/media/for_jellyfin/anime`、Movies 库根 `/media/for_jellyfin/movies`）、`/mnt/d/mv__`、`/mnt/d/music_`、`/mnt/d/photo_`、`/mnt/d/yt_video_`、`/mnt/d/game_video_`、`/mnt/d/obs_video_`、`/mnt/e/Captures` |
-| Minecraft | `itzg/minecraft-server:latest` | 25565/tcp | 命名卷 `mc_data` |
-| Palworld | `thijsvanloef/palworld-server-docker:latest` | 8211 udp + tcp | 命名卷 `palworld_data` |
-| Dozzle | `amir20/dozzle:latest` | 8888/tcp | 无卷，**可写**挂 docker.sock（用于启停容器） |
-| 电源面板 | 本地构建（`homelab/power`） | 127.0.0.1:8092（tailnet 8456） | 无卷；列出除 homarr 外的全部容器 + 宿主机 `mcsm-*`/`1panel`，可单容器或按组一键 stop/start；读代理只读、写代理仅 start/stop；已内嵌进 Homarr |
-| IT-Tools（已下线） | `corentinth/it-tools:latest` | ~~8081~~ | 容器、镜像与 compose 已删除 |
-| Beszel | `henrygd/beszel` + `beszel-agent` | 8090/tcp | 命名卷 `beszel_data` / `beszel_agent_data` |
-| Vaultwarden | `vaultwarden/server:latest` | 8082/tcp | 命名卷 `vaultwarden_data` |
-| lab-tools | 自建镜像（`homelab/lab-tools`） | 127.0.0.1:8765 | 命名卷 `lab_tools_audit`；读代理只读，写代理仅 start/stop（`EXEC`/`VOLUMES`/`CONTAINERS` 关闭）；可按片名搜 B 站（只读挂载 MeTube 的 `cookies.txt`）或 YouTube（`ytsearch`，需代理），抖音等站点贴链接/分享口令直下 |
-| MeTube | `alexta69/metube:2026.10.22` | 127.0.0.1:8081 | 下载目录 `/mnt/d/game_video_`、`/mnt/d/yt_video_`、`/mnt/d/mv__`、`/mnt/d/for_jellyfin/anime`；命名卷 `metube_state`；B 站登录态在 `~/homelab/metube/cookies.txt`（600，勿提交） |
-| Firefly III（已下线） | `fireflyiii/core:latest` | ~~8083~~ | 容器已移除；命名卷 `firefly_db` / `firefly_upload` 保留，备份在 `.cache/exports/firefly` |
-| Rong的账单 | 本地构建（`homelab/bill-ai`） | 8091/tcp（127.0.0.1） | 命名卷 `bill_ai_data`（SQLite `/data/bill.db`）；tailnet `8451` |
+> 下表由 `tools/gen-port-table.ps1` 扫描 `homelab/**/docker-compose.yml` 生成，**不要手改**。改完 compose 后重新生成、整段替换：
+>
+> ```powershell
+> pwsh -NoProfile -File tools/gen-port-table.ps1
+> ```
 
-Rong的账单 同时承担记账与账本：`/` 记一笔、`/dashboard` 总览、`/transactions` 流水、`/settings` 账户与分类。数据全部在 SQLite，不再依赖 Firefly 或 PostgreSQL。
+| 堆栈 | 服务 | 镜像 | 端口 | 挂载 |
+| --- | --- | --- | --- | --- |
+| `beszel` | `beszel` | `henrygd/beszel:latest` | `127.0.0.1:8090:8090` | `beszel_data:/beszel_data`<br>`beszel_socket:/beszel_socket` |
+| `beszel` | `beszel-agent` | `henrygd/beszel-agent:latest` | — | `beszel_agent_data:/var/lib/beszel-agent`<br>`beszel_socket:/beszel_socket`<br>`/var/run/docker.sock:/var/run/docker.sock:ro` |
+| `bill-ai` | `rong-ledger` | — | `127.0.0.1:8091:8091` | `bill_ai_data:/data`<br>`/home/ubuntu/branding:/branding:ro` |
+| `cloudreve` | `cloudreve` | `cloudreve/cloudreve:latest` | `127.0.0.1:8080:5212` | `/home/ubuntu/cloudreve/data:/cloudreve/data`<br>`/mnt/d/media/cloudreve:/cloudreve/data/uploads` |
+| `dozzle` | `dozzle` | `amir20/dozzle:latest` | `127.0.0.1:8888:8080` | `/var/run/docker.sock:/var/run/docker.sock` |
+| `firefly` | `firefly` | `fireflyiii/core:latest` | `127.0.0.1:8083:8080` | `firefly_upload:/var/www/html/storage/upload` |
+| `firefly` | `firefly-db` | `postgres:16-alpine` | — | `firefly_db:/var/lib/postgresql/data` |
+| `firefly` | `firefly-importer` | `fireflyiii/data-importer:latest` | `127.0.0.1:8084:8080` | — |
+| `frpc` | `frpc` | `fatedier/frpc:v0.65.0` | — | `/home/ubuntu/frp/frpc.toml:/etc/frp/frpc.toml:ro` |
+| `homarr` | `homarr` | `ghcr.io/homarr-labs/homarr:latest` | `127.0.0.1:7575:7575` | `homarr-data:/appdata`<br>`/var/run/docker.sock:/var/run/docker.sock:ro`<br>`/home/ubuntu/branding:/app/apps/nextjs/public/branding:ro` |
+| `homelab` | `dockge` | `louislam/dockge:1` | `5001:5001` | `/var/run/docker.sock:/var/run/docker.sock`<br>`dockge_data:/app/data`<br>`/home/ubuntu/homelab/stacks:/app/stacks` |
+| `jellyfin` | `jellyfin` | `jellyfin/jellyfin:latest` | `127.0.0.1:8096:8096` | `jellyfin_config:/config`<br>`jellyfin_cache:/cache`<br>`/home/ubuntu/branding/favicon.ico:/jellyfin/jellyfin-web/favicon.bc8d51405ec040305a87.ico:ro`<br>`/home/ubuntu/branding/apple-touch-icon.png:/jellyfin/jellyfin-web/touchicon.f5bbb798cb2c65908633.png:ro`<br>`/home/ubuntu/branding/apple-touch-icon.png:/jellyfin/jellyfin-web/touchicon144.39209dd2362c0db7c673.png:ro`<br>`/home/ubuntu/branding/avatar.png:/jellyfin/jellyfin-web/assets/img/avatar.png:ro`<br>`/mnt/d/photo_:/media/photos:ro`<br>`/mnt/d/music_:/media/music:ro`<br>`/mnt/d/mv__:/media/movies:ro`<br>`/mnt/d/game_video_:/media/videos/game_video:ro`<br>`/mnt/d/obs_video_:/media/videos/obs_video:ro`<br>`/mnt/d/yt_video_:/media/yt:ro`<br>`/mnt/d/for_jellyfin:/media/for_jellyfin:ro`<br>`/mnt/e/Captures:/media/captures:ro` |
+| `lab-tools` | `docker-proxy` | `tecnativa/docker-socket-proxy:latest` | — | `/var/run/docker.sock:/var/run/docker.sock:ro` |
+| `lab-tools` | `docker-proxy-write` | `tecnativa/docker-socket-proxy:latest` | — | `/var/run/docker.sock:/var/run/docker.sock:ro` |
+| `lab-tools` | `lab-tools` | — | `127.0.0.1:8765:8765` | `lab_tools_audit:/audit`<br>`/home/ubuntu/homelab/metube/cookies.txt:/cookies/cookies.txt:ro` |
+| `librechat` | `librechat` | `ghcr.io/danny-avila/librechat-dev:latest` | `127.0.0.1:3080:3080` | `./librechat.yaml:/app/librechat.yaml:ro`<br>`./uploads:/app/uploads`<br>`./logs:/app/api/logs`<br>`/home/ubuntu/branding/librechat-logo.svg:/app/client/dist/assets/logo.svg:ro`<br>`/home/ubuntu/branding/favicon-32.png:/app/client/dist/assets/favicon-32x32.png:ro`<br>`/home/ubuntu/branding/favicon-16.png:/app/client/dist/assets/favicon-16x16.png:ro` |
+| `librechat` | `librechat-mongo` | `mongo:7` | — | `librechat_mongo:/data/db` |
+| `mc` | `mc` | `itzg/minecraft-server:latest` | `25565:25565` | `mc_data:/data` |
+| `metube` | `metube` | `alexta69/metube:2026.10.22` | `127.0.0.1:8081:8081` | `/mnt/d/game_video_:/downloads/game_video`<br>`/mnt/d/yt_video_:/downloads/yt_video`<br>`/mnt/d/mv__:/downloads/movies`<br>`/mnt/d/for_jellyfin/anime:/downloads/anime`<br>`./cookies.txt:/cookies/cookies.txt`<br>`metube_state:/downloads/.metube` |
+| `palworld` | `palworld` | `thijsvanloef/palworld-server-docker:latest` | `8211:8211/udp`<br>`8211:8211/tcp` | `palworld_data:/palworld` |
+| `pinchflat` | `pinchflat` | `ghcr.io/kieraneglin/pinchflat:latest` | `127.0.0.1:8945:8945` | `pinchflat_config:/config`<br>`/mnt/d/yt_video_:/downloads` |
+| `power` | `power` | — | `127.0.0.1:8092:8092` | `/home/ubuntu/branding:/branding:ro` |
+| `power` | `power-proxy-read` | `tecnativa/docker-socket-proxy:latest` | — | `/var/run/docker.sock:/var/run/docker.sock:ro` |
+| `power` | `power-proxy-write` | `tecnativa/docker-socket-proxy:latest` | — | `/var/run/docker.sock:/var/run/docker.sock:ro` |
+| `traccar` | `traccar` | `traccar/traccar:6-alpine` | `127.0.0.1:8085:8082`<br>`5055:5055` | `/home/ubuntu/traccar/data:/opt/traccar/data`<br>`/home/ubuntu/traccar/logs:/opt/traccar/logs` |
+| `vaultwarden` | `vaultwarden` | `vaultwarden/server:latest` | `127.0.0.1:8082:80` | `vaultwarden_data:/data` |
 
-新增的管理类服务只绑定 `127.0.0.1`，**不要加进 frp**；需要远程访问时走 SSH 隧道，或另行评估隧道方案。
+补充说明：
 
-MCSManager（`mcsm-daemon` / `mcsm-web`）和 `1panel` 是 **WSL 宿主机的 systemd 服务，不是容器**，Docker 面板看不到。电源面板通过宿主机的 `power-host-agent.service`（监听 `172.17.0.1:8093`，白名单仅这三个 unit 的 start/stop）管理它们；源码在 `homelab/power/host-agent/`，安装到 `/opt/power-host-agent`。
+- **日志轮转**：每个 compose 顶部都有 `x-logging`（json-file，10 MB × 3），新容器自动生效；已有容器需要 `docker compose up -d` 重建才会应用。
+- **healthcheck**：`jellyfin`（`/health`）、`rong-ledger`（`/healthz`）、`power`（`/healthz`）、`lab-tools`（8765 端口探活）带健康检查，`docker ps` 的 STATUS 列会显示 `healthy`。
+- `firefly` 堆栈已下线，仅保留命名卷与账单原件（第 2 节目录树），端口 8083/8084 实际不再监听。
+- `traccar` 的 Web 端口是 **8085**（8082 留给 Vaultwarden，两者不能共用）；5055 是手机端上报端口。
+- 新增的管理类服务只绑定 `127.0.0.1`，**不要加进 frp**；需要远程访问时走 SSH 隧道，或另行评估隧道方案。
+- MCSManager（`mcsm-daemon` / `mcsm-web`）和 `1panel` 是 **WSL 宿主机的 systemd 服务，不是容器**，Docker 面板看不到。电源面板通过宿主机的 `power-host-agent.service`（监听 `172.17.0.1:8093`，白名单仅这三个 unit 的 start/stop）管理它们；源码在 `homelab/power/host-agent/`，安装到 `/opt/power-host-agent`。
+- **Minecraft 有两个实例，别改错**：`homelab/mc` 的容器 `mc`（当前 `TYPE=FORGE`、`VERSION=1.20.1`、`FORGE_VERSION=47.3.33`、`MEMORY=8G`、`ONLINE_MODE=true`，数据在命名卷 `mc_data`）；另一台是由 MCSManager 托管的 `mc-rt2home`，`homelab/mc-backup` 每天 06:00 备份的是它（实例目录在 `/opt/mcsmanager/daemon/data/InstanceData/`）。改版本/内存前先确认在用的是哪一台。
+- **Rong的账单**：`/` 记一笔、`/dashboard` 总览、`/transactions` 流水、`/settings` 账户与分类；数据全在 SQLite。`/transactions` 右上角可导出 CSV，`/api/backup.db` 提供 SQLite 在线快照；`homelab/backup/` 的 `backup.sh` + timer 每天 06:30 拉取到 `D:\ubuntu_\.cache\backup\bill-ai\`（保留 14 天）。安装：
 
-Minecraft 环境变量需与整合包匹配：`TYPE=FORGE`（NeoForge 改 `NEOFORGE`）、`VERSION=1.21.1`、`MEMORY=6G`、`ONLINE_MODE=true`（离线服改 `false`）。
+  ```bash
+  sudo install -m755 ~/homelab/backup/backup.sh /usr/local/bin/homelab-backup.sh
+  sudo cp ~/homelab/backup/homelab-backup.service ~/homelab/backup/homelab-backup.timer /etc/systemd/system/
+  sudo systemctl daemon-reload && sudo systemctl enable --now homelab-backup.timer
+  ```
+- **lab-tools 下载通知**：`download_media` 提交后会轮询 MeTube `/history`，任务完成/失败时推送企业微信消息。首选自建应用：在 `homelab/lab-tools/.env` 里填 `WECOM_CORP_ID`、`WECOM_SECRET`、`WECOM_AGENT_ID`（接收人 `WECOM_TOUSER`，默认 `@all`）后 `docker compose up -d` 生效；旧的群机器人 `WECOM_WEBHOOK` 仍兼容，两者都配时优先自建应用，都未配置时只写日志。企业微信后台「接收消息」的 Token / EncodingAESKey / 回调 URL 只用于回调校验，发消息不需要。
 
 ## 5. 存储位置与 C 盘禁令
 

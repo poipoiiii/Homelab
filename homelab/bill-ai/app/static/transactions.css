@@ -27,6 +27,14 @@
   font-size: 13px;
 }
 
+.tx-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
 /* ---------- filters ---------- */
 
 .filter-mobile {
@@ -207,6 +215,12 @@
   .tx-hero {
     padding-top: 32px;
     align-items: center;
+    flex-wrap: wrap;
+  }
+
+  .tx-actions {
+    width: 100%;
+    justify-content: flex-start;
   }
 
   .filter-mobile {

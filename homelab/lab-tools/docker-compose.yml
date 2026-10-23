@@ -1,14 +1,27 @@
 # lab-tools —— 实验室工具服务（MCP over HTTP）
 # 只读查询 + 容器启停（二次确认）+ 下载提交；Docker 访问经由 socket proxy
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
 services:
   lab-tools:
     build: .
     container_name: lab-tools
+    logging: *default-logging
     labels:
       dev.dozzle.group: "AI 助手"
     restart: unless-stopped
     ports:
       - "127.0.0.1:8765:8765"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import socket; socket.create_connection(('127.0.0.1', 8765), 3).close()"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
     environment:
       - TZ=Asia/Shanghai
       - DOCKER_HOST=tcp://docker-proxy:2375
@@ -18,6 +31,17 @@ services:
       - AUDIT_PATH=/audit/actions.jsonl
       # B 站搜索复用 MeTube 那份 cookies，只读
       - BILI_COOKIES=/cookies/cookies.txt
+      # 下载完成通知（两种后端二选一；都配时优先自建应用，未配置则只写日志）
+      # 自建应用：企业 ID + 应用 Secret + AgentId，默认发给应用可见范围内全部成员
+      - WECOM_CORP_ID=${WECOM_CORP_ID:-}
+      - WECOM_SECRET=${WECOM_SECRET:-}
+      - WECOM_AGENT_ID=${WECOM_AGENT_ID:-1000004}
+      # 接收人：@all 或 UserID（多个用 | 分隔）；部门/标签可选
+      - WECOM_TOUSER=${WECOM_TOUSER:-@all}
+      - WECOM_TOPARTY=${WECOM_TOPARTY:-}
+      - WECOM_TOTAG=${WECOM_TOTAG:-}
+      # 群机器人 webhook（旧方案，可选）
+      - WECOM_WEBHOOK=${WECOM_WEBHOOK:-}
     volumes:
       - lab_tools_audit:/audit
       - /home/ubuntu/homelab/metube/cookies.txt:/cookies/cookies.txt:ro
@@ -32,6 +56,7 @@ services:
   docker-proxy:
     image: tecnativa/docker-socket-proxy:latest
     container_name: lab-tools-docker-proxy
+    logging: *default-logging
     labels:
       dev.dozzle.group: "AI 助手"
     restart: unless-stopped
@@ -54,6 +79,7 @@ services:
   docker-proxy-write:
     image: tecnativa/docker-socket-proxy:latest
     container_name: lab-tools-docker-proxy-write
+    logging: *default-logging
     labels:
       dev.dozzle.group: "AI 助手"
     restart: unless-stopped

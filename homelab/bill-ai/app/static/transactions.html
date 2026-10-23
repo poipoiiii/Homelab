@@ -10,7 +10,7 @@
   <link rel="apple-touch-icon" href="/branding/apple-touch-icon.png">
   <link rel="stylesheet" href="/static/style.css?v=20261022f">
   <link rel="stylesheet" href="/static/dashboard.css?v=20261022f">
-  <link rel="stylesheet" href="/static/transactions.css?v=20261022f">
+  <link rel="stylesheet" href="/static/transactions.css?v=20261023a">
 </head>
 <body>
   <div class="page dash tx-page">
@@ -34,7 +34,10 @@
           <h1 class="tx-title" id="txTitle">全部记录</h1>
           <p class="tx-sub" id="txSub">正在读取…</p>
         </div>
-        <button type="button" class="btn primary" id="addBtn">记一笔</button>
+        <div class="tx-actions">
+          <a class="btn secondary" id="exportBtn" href="/api/export.csv" download>导出 CSV</a>
+          <button type="button" class="btn primary" id="addBtn">记一笔</button>
+        </div>
       </section>
 
       <div class="filter-mobile">
@@ -141,6 +144,6 @@
     </div>
   </div>
 
-  <script src="/static/transactions.js?v=20261022f"></script>
+  <script src="/static/transactions.js?v=20261023a"></script>
 </body>
 </html>

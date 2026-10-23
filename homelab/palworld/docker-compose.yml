@@ -1,8 +1,15 @@
 # Palworld (幻兽帕鲁) —— 社区成熟镜像 thijsvanloef
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
 services:
   palworld:
     image: thijsvanloef/palworld-server-docker:latest
     container_name: palworld
+    logging: *default-logging
     restart: unless-stopped
     ports:
       - 8211:8211/udp

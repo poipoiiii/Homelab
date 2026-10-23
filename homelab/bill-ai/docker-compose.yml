@@ -1,9 +1,16 @@
 # Rong的账单 —— 账单识别 + 本地账本（SQLite），不依赖其他容器
 # 访问：本机 127.0.0.1:8091，tailnet 入口 https://home.example-tailnet.ts.net:8451
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
 services:
   rong-ledger:
     build: .
     container_name: rong-ledger
+    logging: *default-logging
     labels:
       dev.dozzle.group: "家庭服务"
     restart: unless-stopped
@@ -13,6 +20,12 @@ services:
       - DB_PATH=/data/bill.db
     ports:
       - "127.0.0.1:8091:8091"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8091/healthz', timeout=3)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
     volumes:
       - bill_ai_data:/data
       # 头像/图标（换图无需重建镜像）

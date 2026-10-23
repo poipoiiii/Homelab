@@ -94,6 +94,22 @@ function queryString(offset) {
   return params.toString();
 }
 
+function exportHref() {
+  const params = new URLSearchParams();
+  const { month, account, category, type, q } = state.filters;
+  if (month) params.set("month", month);
+  if (account) params.set("account_id", account);
+  if (category) params.set("category_id", category);
+  if (type) params.set("type", type);
+  if (q) params.set("q", q);
+  const query = params.toString();
+  return `/api/export.csv${query ? `?${query}` : ""}`;
+}
+
+function syncExport() {
+  $("exportBtn").href = exportHref();
+}
+
 async function load(reset = true) {
   if (state.loading) return;
   state.loading = true;
@@ -124,6 +140,7 @@ function render(data) {
   if (state.filters.type) parts.push(TYPE_LABEL[state.filters.type]);
   $("txSub").textContent = parts.join(" · ");
   syncFilterToggle();
+  syncExport();
 
   $("txSummary").innerHTML = [
     `<span>支出 <strong>${money(data.sums.out)}</strong></span>`,

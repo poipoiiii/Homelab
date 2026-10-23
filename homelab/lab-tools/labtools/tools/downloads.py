@@ -4,6 +4,7 @@ from urllib.parse import urlparse
 
 import httpx
 
+from labtools import watcher
 from labtools.runtime import METUBE_URL, mcp
 from labtools.tools.search import SOURCES, SourceUnavailable, search_entries
 
@@ -138,6 +139,9 @@ def download_media(
         series_name = _safe_name(series) or _safe_name(query)
 
     result = _submit(link, target, limit, items, series_name)
+    if result.get("queued"):
+        # 交给后台轮询 MeTube 队列，完成/失败时发通知（未配置企业微信则只记日志）
+        watcher.track(link, target, series=series_name, title=(chosen or {}).get("title", ""))
 
     payload = {
         "target": target,

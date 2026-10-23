@@ -4,6 +4,8 @@
 """
 
 import os
+import time
+from concurrent.futures import ThreadPoolExecutor
 
 import httpx
 from fastapi import FastAPI, HTTPException
@@ -72,6 +74,57 @@ def _containers() -> list[dict]:
     return result
 
 
+# Docker stats 单次采样有延迟，缓存几秒，避免每次页面刷新都重扫一遍
+STATS_TTL = 5
+_stats_cache: tuple[float, tuple[str, ...], dict[str, dict]] = (0.0, (), {})
+
+
+def _memory(name: str) -> dict | None:
+    try:
+        with httpx.Client(timeout=6) as client:
+            response = client.get(f"{READ}/containers/{name}/stats", params={"stream": "false"})
+            response.raise_for_status()
+            stats = response.json().get("memory_stats") or {}
+    except Exception:
+        return None
+
+    usage = int(stats.get("usage") or 0)
+    limit = int(stats.get("limit") or 0)
+    detail = stats.get("stats") or {}
+    # cgroup v2 用 inactive_file，v1 用 cache；两者都要扣掉才是真实占用
+    cache = int(detail.get("inactive_file") or detail.get("cache") or 0)
+    used = max(0, usage - cache)
+    if used <= 0:
+        return None
+    return {"used": used, "limit": limit}
+
+
+def _memories(names: list[str]) -> dict[str, dict]:
+    global _stats_cache
+    if not names:
+        return {}
+    stamp, cached_names, cached = _stats_cache
+    if tuple(names) == cached_names and time.time() - stamp < STATS_TTL:
+        return cached
+
+    result: dict[str, dict] = {}
+    with ThreadPoolExecutor(max_workers=min(8, len(names))) as pool:
+        for name, value in zip(names, pool.map(_memory, names)):
+            if value:
+                result[name] = value
+
+    _stats_cache = (time.time(), tuple(names), result)
+    return result
+
+
+def _with_memory(items: list[dict]) -> list[dict]:
+    names = [c["name"] for c in items if c["state"] == "running"]
+    memories = _memories(names)
+    for item in items:
+        item["mem"] = memories.get(item["name"])
+    return items
+
+
 def _units() -> list[dict]:
     """宿主机 systemd 服务；代理不可达时返回空列表，不影响容器部分。"""
     try:
@@ -108,6 +161,7 @@ def _groups(items: list[dict]) -> list[dict]:
             "containers": members,
             "running": sum(1 for m in members if m["state"] == "running"),
             "total": len(members),
+            "mem_used": sum(((m.get("mem") or {}).get("used") or 0) for m in members),
         })
     return groups
 
@@ -129,7 +183,7 @@ def _unit_action(name: str, action: str) -> bool:
 @app.get("/api/state")
 def state():
     try:
-        items = _containers()
+        items = _with_memory(_containers())
     except Exception as exc:
         raise HTTPException(status_code=502, detail=f"读代理不可达：{exc}") from exc
     return JSONResponse({"groups": _groups(items + _units())})
@@ -245,6 +299,9 @@ PAGE = r"""<!doctype html>
   .dot.warn { background: #c9a227; }
   .cname { font-size: 13.5px; font-weight: 500; }
   .state { margin-left: auto; font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
+  .mem { display: flex; align-items: center; gap: 7px; font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
+  .mem-bar { width: 34px; height: 3px; border-radius: 2px; background: #262c35; overflow: hidden; }
+  .mem-bar i { display: block; height: 100%; background: var(--focus); opacity: .7; }
 
   button {
     appearance: none; cursor: pointer; border-radius: 7px; padding: 4px 11px;
@@ -272,6 +329,7 @@ PAGE = r"""<!doctype html>
     header { display: block; }
     header .hint { display: block; margin-top: 4px; }
     .state { display: none; }
+    .mem-bar { display: none; }
   }
 </style>
 </head>
@@ -286,7 +344,7 @@ PAGE = r"""<!doctype html>
   </header>
   <div class="banner" id="banner" hidden></div>
   <div id="body"><p class="empty">加载中…</p></div>
-  <footer>只执行 stop / start，不删容器、不碰数据卷；刷新间隔 10 秒。</footer>
+  <footer>只执行 stop / start，不删容器、不碰数据卷；刷新间隔 10 秒，内存为 Docker 即时统计。</footer>
 </div>
 <script>
 const body = document.getElementById('body');
@@ -308,6 +366,38 @@ function dotClass(state) {
   return 'dot';
 }
 
+function fmtBytes(bytes) {
+  if (!bytes) return '';
+  const units = ['B', 'KB', 'MB', 'GB', 'TB'];
+  let value = bytes;
+  let index = 0;
+  while (value >= 1024 && index < units.length - 1) {
+    value /= 1024;
+    index += 1;
+  }
+  return value.toFixed(index < 2 || value >= 100 ? 0 : 1) + ' ' + units[index];
+}
+
+function memoryNode(item, peak) {
+  const wrap = document.createElement('span');
+  wrap.className = 'mem';
+  if (!item.mem || !item.mem.used) return wrap;
+
+  const text = document.createElement('span');
+  text.textContent = fmtBytes(item.mem.used);
+  const bar = document.createElement('span');
+  bar.className = 'mem-bar';
+  bar.setAttribute('aria-hidden', 'true');
+  const fill = document.createElement('i');
+  fill.style.width = Math.max(4, Math.round((item.mem.used / peak) * 100)) + '%';
+  bar.appendChild(fill);
+
+  wrap.title = '内存占用 ' + fmtBytes(item.mem.used) +
+               (item.mem.limit ? '（limit ' + fmtBytes(item.mem.limit) + '）' : '');
+  wrap.append(text, bar);
+  return wrap;
+}
+
 function render(groups) {
   body.innerHTML = '';
   if (!groups.length) {
@@ -318,6 +408,7 @@ function render(groups) {
   for (const g of groups) {
     const section = document.createElement('section');
     section.className = 'group';
+    const peak = Math.max(1, ...g.containers.map((c) => (c.mem && c.mem.used) || 0));
 
     const head = document.createElement('div');
     head.className = 'group-head';
@@ -325,7 +416,8 @@ function render(groups) {
     h2.textContent = g.name;
     const count = document.createElement('span');
     count.className = 'count';
-    count.innerHTML = '<b>' + g.running + '</b> / ' + g.total + ' 运行';
+    count.innerHTML = '<b>' + g.running + '</b> / ' + g.total + ' 运行' +
+      (g.mem_used ? ' · ' + fmtBytes(g.mem_used) : '');
     head.append(h2, count);
 
     const stopMode = g.running > 0;
@@ -347,6 +439,7 @@ function render(groups) {
       state.className = 'state';
       state.textContent = LABELS[c.state] || c.state;
       li.append(dot, name, state);
+      li.appendChild(memoryNode(c, peak));
 
       const btn = document.createElement('button');
       const stopMode = c.state === 'running';

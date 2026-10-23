@@ -1,15 +1,22 @@
 # Traccar —— 自建 GPS 位置服务（手机端定时上报 + Web 地图/轨迹/围栏）
-# 8082 只给本机/隧道访问；5055 是 Traccar Client 的上报端口，需要手机可达
+# 8085 只给本机/隧道访问（8082 已被 Vaultwarden 占用）；5055 是 Traccar Client 的上报端口，需要手机可达
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
 services:
   traccar:
     image: traccar/traccar:6-alpine
     container_name: traccar
+    logging: *default-logging
     labels:
       dev.dozzle.group: "家庭服务"
     restart: unless-stopped
     ports:
       # Web 管理界面与 REST API，只绑本机，公网访问走 Tailscale 或 HTTPS 反代
-      - "127.0.0.1:8082:8082"
+      - "127.0.0.1:8085:8082"
       # 手机端上报端口（OsmAnd 协议，Traccar Client 默认 5055）
       - "5055:5055"
     volumes:

@@ -4,9 +4,8 @@ from labtools.docker_api import docker_client, human_bytes
 from labtools.runtime import mcp
 
 
-@mcp.tool()
-def disk_usage() -> str:
-    """查看 Docker 占用的磁盘空间：镜像、容器、数据卷、构建缓存各自的总量和可回收量。只读。"""
+def disk_summary() -> dict:
+    """Docker 磁盘占用的结构化摘要，供 disk_usage 和 health_snapshot 共用。"""
     df = docker_client().df()
     images = df.get("Images") or []
     containers = df.get("Containers") or []
@@ -31,7 +30,7 @@ def disk_usage() -> str:
         (item.get("Size") or 0) for item in cache if not item.get("InUse")
     )
 
-    return json.dumps({
+    return {
         "images": {
             "count": len(images),
             "size": human_bytes(image_size),
@@ -54,4 +53,10 @@ def disk_usage() -> str:
         "total_reclaimable": human_bytes(
             unused_image_size + unused_volume_size + unused_cache_size
         ),
-    }, ensure_ascii=False, indent=2)
+    }
+
+
+@mcp.tool()
+def disk_usage() -> str:
+    """查看 Docker 占用的磁盘空间：镜像、容器、数据卷、构建缓存各自的总量和可回收量。只读。"""
+    return json.dumps(disk_summary(), ensure_ascii=False, indent=2)

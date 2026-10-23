@@ -1,0 +1,10 @@
+[Unit]
+Description=Homelab daily backup (bill-ai SQLite + CSV)
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/homelab-backup.sh
+Nice=10
+IOSchedulingClass=idle

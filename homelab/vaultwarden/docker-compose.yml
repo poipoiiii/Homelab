@@ -6,10 +6,17 @@
 #   3) ADMIN_TOKEN 不要明文：先执行
 #        docker run --rm -it vaultwarden/server /vaultwarden hash
 #      把得到的 argon2 串写进 .env 的 VAULTWARDEN_ADMIN_TOKEN。
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
 services:
   vaultwarden:
     image: vaultwarden/server:latest
     container_name: vaultwarden
+    logging: *default-logging
     restart: unless-stopped
     ports:
       - "127.0.0.1:8082:80"

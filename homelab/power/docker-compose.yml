@@ -1,15 +1,28 @@
 # 电源面板 —— 按组一键 stop/start，用来临时释放内存
 # 独立于被控栈：AI 全套关掉后，这个面板仍然在线，可以再把它们启动回来
 # 权限拆分：读代理只能查容器；写代理只能 start/stop，不开放 create/kill/exec
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
 services:
   power:
     build: .
     container_name: power
+    logging: *default-logging
     labels:
       dev.dozzle.group: "入口与运维"
     restart: unless-stopped
     ports:
       - "127.0.0.1:8092:8092"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8092/healthz', timeout=3)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
     volumes:
       # 头像/图标（换图无需重建镜像）
       - /home/ubuntu/branding:/branding:ro
@@ -28,6 +41,7 @@ services:
   power-proxy-read:
     image: tecnativa/docker-socket-proxy:latest
     container_name: power-proxy-read
+    logging: *default-logging
     labels:
       dev.dozzle.group: "入口与运维"
     restart: unless-stopped
@@ -47,6 +61,7 @@ services:
   power-proxy-write:
     image: tecnativa/docker-socket-proxy:latest
     container_name: power-proxy-write
+    logging: *default-logging
     labels:
       dev.dozzle.group: "入口与运维"
     restart: unless-stopped

@@ -1,10 +1,17 @@
 # MeTube —— 按 URL 一次性下载（yt-dlp），供 Agent 调用
 # 仅监听本机回环；目标目录分别挂到 /downloads/<target>
 # cookies.txt 为 B 站登录态（SESSDATA）；不要提交到 git，文件权限 600
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
 services:
   metube:
     image: alexta69/metube:2026.10.22
     container_name: metube
+    logging: *default-logging
     labels:
       dev.dozzle.group: "影音"
     restart: unless-stopped

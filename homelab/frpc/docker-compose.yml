@@ -1,7 +1,14 @@
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
 services:
   frpc:
     image: fatedier/frpc:v0.65.0
     container_name: frpc
+    logging: *default-logging
     labels:
       dev.dozzle.group: "入口与运维"
     restart: unless-stopped

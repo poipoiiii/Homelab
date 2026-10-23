@@ -1,6 +1,6 @@
 # Agent 能力需求清单（v2：可写 + 下载）
 
-> 状态：P0 已实现（MeTube 下载 + 容器启停/重启）；P1（下载状态/取消、Pinchflat 只读）待做。
+> 状态：P0 已实现（MeTube 下载 + 容器启停/重启）；下载完成通知支持企业微信自建应用（发给个人）和群机器人两种通道；下载状态查询/取消、Pinchflat 只读待做。
 > 目标：在只读工具（lab-tools）基础上，增加“启停容器”和“按 URL 下载视频”两类动作，并接入 LibreChat。
 
 ## 1. 当前容器盘点
@@ -15,7 +15,7 @@
 | `dozzle` | dozzle | 8888 | 入口与运维 | running | 日志面板，保护 |
 | `jellyfin` | jellyfin | 8096 | 影音 | exited | 可启停 |
 | `pinchflat` | pinchflat | 8945 | 影音 | running | YouTube 订阅下载，只读查询 |
-| `traccar` | traccar | 5055/8082 | 家庭服务 | running | 可启停 |
+| `traccar` | traccar | 5055/8085 | 家庭服务 | running | 可启停 |
 | `rong-ledger` | bill-ai | 8091 | 家庭服务 | running | 记账，可重启但不要随便停 |
 | `cloudreve` | cloudreve | 8080 | 家庭服务 | exited | 可启停 |
 | `frpc` | frpc | — | 入口与运维 | exited | 公网入口，禁止 stop |
@@ -50,13 +50,18 @@
   - `POST http://metube:8081/add`，body `{"url": "...", "folder": "game_video"}`
   - MeTube 挂载多个目录到 `/downloads/<target>`
 - 返回 `{queued: true, target, url, hint}`，不阻塞等待下载完成
-- 可选 `download_status()`：查询 MeTube 队列/历史（需确认其 API）
+- 提交后由 `labtools/watcher.py` 轮询 MeTube `/history`，完成或失败时推送企业微信消息
+  - 通用发送组件在 `labtools/wecom.py`，被 `labtools/notify.py` 按环境变量装配
+  - 首选自建应用：`WECOM_CORP_ID` + `WECOM_SECRET` + `WECOM_AGENT_ID`，默认 `WECOM_TOUSER=@all`（应用可见范围内全部成员）
+  - 备选群机器人：`WECOM_WEBHOOK`；两者都配时优先自建应用；都未配置时只写日志
+  - 企业微信后台「接收消息」的 Token / EncodingAESKey / 回调 URL 与发消息无关，发消息只需要 CorpID、应用 Secret、AgentId
+  - 任务状态落在 `/audit/downloads.json`，重启不丢；已完成记录保留 7 天
 
 ### P1：下载状态与取消
 
-- `list_downloads()`：列出进行中/最近完成
+- `list_downloads()`：列出进行中/最近完成（可直接复用 watcher 的 `/history` 轮询结果）
 - `cancel_download(id)`：取消排队或进行中的任务
-- 当前 MeTube 的 `/add` 是明确可用的；状态接口需要按实际版本确认
+- 当前 MeTube 的 `/add` 是明确可用的；watcher 依赖 `/history` 返回的 queue/done，若版本差异导致接口不可用，只会记日志，不影响提交下载
 
 ### P1：Pinchflat 只读
 
