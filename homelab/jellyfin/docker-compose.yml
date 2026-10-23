@@ -22,6 +22,8 @@ services:
       - /home/ubuntu/branding/favicon.ico:/jellyfin/jellyfin-web/favicon.bc8d51405ec040305a87.ico:ro
       - /home/ubuntu/branding/apple-touch-icon.png:/jellyfin/jellyfin-web/touchicon.f5bbb798cb2c65908633.png:ro
       - /home/ubuntu/branding/apple-touch-icon.png:/jellyfin/jellyfin-web/touchicon144.39209dd2362c0db7c673.png:ro
+      # 未设置头像的用户默认头像
+      - /home/ubuntu/branding/avatar.png:/jellyfin/jellyfin-web/assets/img/avatar.png:ro
       - /mnt/d/photo_:/media/photos:ro
       - /mnt/d/music_:/media/music:ro
       - /mnt/d/mv__:/media/movies:ro
@@ -29,6 +31,8 @@ services:
       - /mnt/d/obs_video_:/media/videos/obs_video:ro
       # Pinchflat（yt-dlp）下载的 YouTube 内容，库根目录见 pinchflat 的 Output path 子目录
       - /mnt/d/yt_video_:/media/yt:ro
+      # 主力播放来源（D:\for_jellyfin），只读
+      - /mnt/d/for_jellyfin:/media/for_jellyfin:ro
       # E 盘的录屏/截图合集（9P 只读，不能作可写数据盘）
       - /mnt/e/Captures:/media/captures:ro
 volumes:

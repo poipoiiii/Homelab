@@ -15,6 +15,8 @@ services:
       - "127.0.0.1:8091:8091"
     volumes:
       - bill_ai_data:/data
+      # 头像/图标（换图无需重建镜像）
+      - /home/ubuntu/branding:/branding:ro
 
 volumes:
   bill_ai_data:

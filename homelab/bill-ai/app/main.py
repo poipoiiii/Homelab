@@ -30,9 +30,12 @@ MAX_IMAGE_BYTES = 8 * 1024 * 1024
 LEGACY_ACCOUNTS = {"银行卡": "中国银行", "储蓄卡": "中国银行"}
 
 STATIC_DIR = os.path.join(os.path.dirname(__file__), "static")
+BRANDING_DIR = os.getenv("BRANDING_DIR", "/branding")
 
 app = FastAPI(title="Rong的账单", docs_url=None, redoc_url=None)
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
+if os.path.isdir(BRANDING_DIR):
+    app.mount("/branding", StaticFiles(directory=BRANDING_DIR), name="branding")
 store.init_db()
 
 
@@ -538,6 +541,11 @@ async def transactions_page() -> FileResponse:
 @app.get("/settings")
 async def settings_page() -> FileResponse:
     return FileResponse(os.path.join(STATIC_DIR, "settings.html"))
+
+
+@app.get("/favicon.ico")
+async def favicon() -> FileResponse:
+    return FileResponse(os.path.join(BRANDING_DIR, "favicon.ico"))
 
 
 @app.get("/healthz")

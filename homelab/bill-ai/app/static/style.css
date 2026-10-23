@@ -99,6 +99,8 @@ a.brand:hover .brand-name {
   font-family: var(--serif);
   font-size: 18px;
   line-height: 1;
+  flex: none;
+  object-fit: cover;
 }
 
 .brand-name {

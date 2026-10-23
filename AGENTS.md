@@ -92,6 +92,15 @@ docker compose up -d
 docker compose logs -f  # 排错
 ```
 
+更换头像 / 站点图标（Ubuntu 内，需要 sudo；不会重建镜像）：
+
+```bash
+sudo python3 ~/homelab/branding/apply-avatar.py                  # 默认用 homelab/favicon.jpeg
+sudo python3 ~/homelab/branding/apply-avatar.py /path/to/新图.png # 任意图片，自动居中裁方
+```
+
+脚本会把整套图标写进 `/home/ubuntu/branding`（旧图备份到 `D:\ubuntu_\.cache\branding-backup\<时间戳>`），并更新 Homarr 的看板 logo、favicon 和用户头像（不动各应用卡片自己的图标）；Jellyfin / LibreChat / Rong的账单 / 电源面板 通过目录或单文件挂载即时生效，Cloudreve 的站点 logo 也指向同一目录。完整说明见 `homelab/branding/README.md`。
+
 查看状态：
 
 ```powershell
@@ -108,21 +117,24 @@ wsl.exe --version
 | 服务 | 镜像 | 端口 | 数据位置 |
 | --- | --- | --- | --- |
 | Dockge | `louislam/dockge:1` | 5001/tcp | 命名卷 `dockge_data` + `~/homelab/stacks` |
-| Jellyfin | `jellyfin/jellyfin:latest` | 8096/tcp | 命名卷 config/cache；媒体 `/mnt/d/media` 只读 |
+| Jellyfin | `jellyfin/jellyfin:latest` | 8096/tcp | 命名卷 config/cache；媒体只读：`/mnt/d/for_jellyfin`（主力片源，Shows 库根 `/media/for_jellyfin/anime`、Movies 库根 `/media/for_jellyfin/movies`）、`/mnt/d/mv__`、`/mnt/d/music_`、`/mnt/d/photo_`、`/mnt/d/yt_video_`、`/mnt/d/game_video_`、`/mnt/d/obs_video_`、`/mnt/e/Captures` |
 | Minecraft | `itzg/minecraft-server:latest` | 25565/tcp | 命名卷 `mc_data` |
 | Palworld | `thijsvanloef/palworld-server-docker:latest` | 8211 udp + tcp | 命名卷 `palworld_data` |
 | Dozzle | `amir20/dozzle:latest` | 8888/tcp | 无卷，**可写**挂 docker.sock（用于启停容器） |
+| 电源面板 | 本地构建（`homelab/power`） | 127.0.0.1:8092（tailnet 8456） | 无卷；列出除 homarr 外的全部容器 + 宿主机 `mcsm-*`/`1panel`，可单容器或按组一键 stop/start；读代理只读、写代理仅 start/stop；已内嵌进 Homarr |
 | IT-Tools（已下线） | `corentinth/it-tools:latest` | ~~8081~~ | 容器、镜像与 compose 已删除 |
 | Beszel | `henrygd/beszel` + `beszel-agent` | 8090/tcp | 命名卷 `beszel_data` / `beszel_agent_data` |
 | Vaultwarden | `vaultwarden/server:latest` | 8082/tcp | 命名卷 `vaultwarden_data` |
-| lab-tools | 自建镜像（`homelab/lab-tools`） | 127.0.0.1:8765 | 命名卷 `lab_tools_audit`；读代理只读，写代理仅 start/stop（`EXEC`/`VOLUMES`/`CONTAINERS` 关闭） |
-| MeTube | `alexta69/metube:2026.10.22` | 127.0.0.1:8081 | 下载目录 `/mnt/d/game_video_`、`/mnt/d/yt_video_`、`/mnt/d/mv__`；命名卷 `metube_state`；B 站登录态在 `~/homelab/metube/cookies.txt`（600，勿提交） |
+| lab-tools | 自建镜像（`homelab/lab-tools`） | 127.0.0.1:8765 | 命名卷 `lab_tools_audit`；读代理只读，写代理仅 start/stop（`EXEC`/`VOLUMES`/`CONTAINERS` 关闭）；可按片名搜 B 站（只读挂载 MeTube 的 `cookies.txt`）或 YouTube（`ytsearch`，需代理），抖音等站点贴链接/分享口令直下 |
+| MeTube | `alexta69/metube:2026.10.22` | 127.0.0.1:8081 | 下载目录 `/mnt/d/game_video_`、`/mnt/d/yt_video_`、`/mnt/d/mv__`、`/mnt/d/for_jellyfin/anime`；命名卷 `metube_state`；B 站登录态在 `~/homelab/metube/cookies.txt`（600，勿提交） |
 | Firefly III（已下线） | `fireflyiii/core:latest` | ~~8083~~ | 容器已移除；命名卷 `firefly_db` / `firefly_upload` 保留，备份在 `.cache/exports/firefly` |
 | Rong的账单 | 本地构建（`homelab/bill-ai`） | 8091/tcp（127.0.0.1） | 命名卷 `bill_ai_data`（SQLite `/data/bill.db`）；tailnet `8451` |
 
 Rong的账单 同时承担记账与账本：`/` 记一笔、`/dashboard` 总览、`/transactions` 流水、`/settings` 账户与分类。数据全部在 SQLite，不再依赖 Firefly 或 PostgreSQL。
 
 新增的管理类服务只绑定 `127.0.0.1`，**不要加进 frp**；需要远程访问时走 SSH 隧道，或另行评估隧道方案。
+
+MCSManager（`mcsm-daemon` / `mcsm-web`）和 `1panel` 是 **WSL 宿主机的 systemd 服务，不是容器**，Docker 面板看不到。电源面板通过宿主机的 `power-host-agent.service`（监听 `172.17.0.1:8093`，白名单仅这三个 unit 的 start/stop）管理它们；源码在 `homelab/power/host-agent/`，安装到 `/opt/power-host-agent`。
 
 Minecraft 环境变量需与整合包匹配：`TYPE=FORGE`（NeoForge 改 `NEOFORGE`）、`VERSION=1.21.1`、`MEMORY=6G`、`ONLINE_MODE=true`（离线服改 `false`）。
 
