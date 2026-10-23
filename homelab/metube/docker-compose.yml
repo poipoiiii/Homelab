@@ -1,6 +1,6 @@
 # MeTube —— 按 URL 一次性下载（yt-dlp），供 Agent 调用
-# 仅监听本机回环；三个目标目录分别挂到 /downloads/<target>
-# cookies.txt 为 B 站登录态（SESSDATA），只读挂载；不要提交到 git，文件权限 600
+# 仅监听本机回环；目标目录分别挂到 /downloads/<target>
+# cookies.txt 为 B 站登录态（SESSDATA）；不要提交到 git，文件权限 600
 services:
   metube:
     image: alexta69/metube:2026.10.22
@@ -18,13 +18,17 @@ services:
       - MAX_CONCURRENT_DOWNLOADS=1
       - CUSTOM_DIRS=true
       - CREATE_CUSTOM_DIRS=true
-      - TEMP_DIR=/downloads/.metube/tmp
-      - 'YTDL_OPTIONS={"updatetime": false, "cookiefile": "/cookies/cookies.txt"}'
+      # 不设 TEMP_DIR：让 yt-dlp 的临时文件落在目标目录（同盘 rename），
+      # 否则跨盘复制会在 /mnt/d 上触发 utime EPERM
+      # 允许按单次任务覆盖 yt-dlp 选项（用于选集 playlist_items）
+      - ALLOW_YTDL_OPTIONS_OVERRIDES=true
+      - 'YTDL_OPTIONS={"updatetime": false, "cookiefile": "/cookies/cookies.txt", "paths": {"temp": ""}}'
       - "OUTPUT_TEMPLATE=%(title)s [%(id)s].%(ext)s"
     volumes:
       - /mnt/d/game_video_:/downloads/game_video
       - /mnt/d/yt_video_:/downloads/yt_video
       - /mnt/d/mv__:/downloads/movies
+      - /mnt/d/for_jellyfin/anime:/downloads/anime
       - ./cookies.txt:/cookies/cookies.txt
       - metube_state:/downloads/.metube
 

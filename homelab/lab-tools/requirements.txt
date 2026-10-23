@@ -1,3 +1,5 @@
 mcp>=1.10,<2
 docker>=7.1,<8
 httpx>=0.27,<1
+# 只用于 YouTube 搜索（ytsearch），实际下载仍交给 MeTube
+yt-dlp>=2025.1

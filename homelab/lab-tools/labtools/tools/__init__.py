@@ -1,1 +1,1 @@
-from . import bills, containers, disk, downloads, services  # noqa: F401
+from . import bills, containers, disk, downloads, search, services  # noqa: F401

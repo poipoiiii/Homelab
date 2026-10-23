@@ -13,11 +13,14 @@ services:
       - TZ=Asia/Shanghai
       - DOCKER_HOST=tcp://docker-proxy:2375
       - DOCKER_HOST_WRITE=tcp://docker-proxy-write:2375
-      - BILL_AI_URL=http://bill-ai:8091
+      - BILL_AI_URL=http://rong-ledger:8091
       - METUBE_URL=http://metube:8081
       - AUDIT_PATH=/audit/actions.jsonl
+      # B 站搜索复用 MeTube 那份 cookies，只读
+      - BILI_COOKIES=/cookies/cookies.txt
     volumes:
       - lab_tools_audit:/audit
+      - /home/ubuntu/homelab/metube/cookies.txt:/cookies/cookies.txt:ro
     networks:
       - default
       - bill_ai
