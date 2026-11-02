@@ -27,7 +27,7 @@
 | 媒体库 | [homelab/jellyfin](homelab/jellyfin) | 只读挂载 D 盘各媒体目录，番剧按剧集结构识别 |
 | 电源面板 | [homelab/power](homelab/power) | 按组一键 stop/start，临时释放内存；宿主机 systemd 服务也能管 |
 | 记账 | [homelab/bill-ai](homelab/bill-ai) | 「Rong的账单」：截图/CSV/XLSX 账单识别 + 本地账本（SQLite）；配套 [Android 采集 App](homelab/bill-ai/android) 把银行短信和支付通知写进待入账队列 |
-| AI 修图 | [homelab_android/server/image-edit](homelab_android/server/image-edit) | Qwen-Image-Edit-2511 网关（FastAPI + SQLite job 队列），推理复用本机 ComfyUI 的 GGUF 量化模型；配套 Android App 的独立修图页与 4 个 Agent 工具 |
+| AI 修图 | [HomeLab_Android/server/image-edit](https://github.com/poipoiiii/HomeLab_Android/tree/main/server/image-edit) | Qwen-Image-Edit-2511 网关（FastAPI + SQLite job 队列），推理复用本机 ComfyUI 的 GGUF 量化模型；配套 Android App 的独立修图页与 4 个 Agent 工具 |
 | 统一图标 | [homelab/branding](homelab/branding) | 一条命令生成全站 favicon / logo / 头像 |
 | 备份 | [homelab/backup](homelab/backup)、[homelab/mc-backup](homelab/mc-backup) | 账单每日快照、Minecraft 世界每日归档 |
 | 宿主机服务 | [homelab/mcsmanager](homelab/mcsmanager)、[homelab/power/host-agent](homelab/power/host-agent) | MCSManager / 1Panel 的 systemd 单元与受控代理 |
@@ -189,11 +189,12 @@ Pinchflat 的模型是「订阅源 + 定时检查」，适合 YouTube 频道归�
 ├─ tools/
 │  ├─ startup-panel/      Windows 开机自启管理面板
 │  └─ gen-port-table.ps1  由 compose 生成端口表
-├─ docs/                  README 截图
-├─ homelab_android/       Android 客户端（含 server/image-edit 修图网关）
+├─ docs/                  README 截图与主题素材
 ├─ AGENTS.md              给 AI 编码代理的项目约束与踩坑记录
 └─ .gitignore             排除虚拟磁盘、媒体、凭据、缓存
 ```
+
+Android 客户端在独立仓库 [HomeLab_Android](https://github.com/poipoiiii/HomeLab_Android)，本地与本仓库并列放在 `homelab_android/`，不并入本仓库。
 
 ## 备份
 
@@ -214,10 +215,11 @@ Pinchflat 的模型是「订阅源 + 定时检查」，适合 YouTube 频道归�
 
 Android App 的「AI 修图」页和对话里的 `edit_photo` 工具，会把照片和一句中文指令发给家里的 `img-edit-gateway:8094`，网关排队调用本机 ComfyUI（GGUF 量化的 Qwen-Image-Edit-2511）出图，结果再下载回手机相册；图片不经过 DeepSeek/OpenAI。
 
-- **手机端文档**（入口、配置、三种模式、对话工具、构建与排查）：[homelab_android/docs/image-edit-android.md](homelab_android/docs/image-edit-android.md)
-- **服务端文档**（部署、模型文件、API、运维与调参）：[homelab_android/server/image-edit/README.md](homelab_android/server/image-edit/README.md)
-- **设计与实测数据**：[homelab_android/docs/image-edit-design.md](homelab_android/docs/image-edit-design.md)
+- **手机端文档**（入口、配置、三种模式、对话工具、构建与排查）：[image-edit-android.md](https://github.com/poipoiiii/HomeLab_Android/blob/main/docs/image-edit-android.md)
+- **服务端文档**（部署、模型文件、API、运维与调参）：[server/image-edit/README.md](https://github.com/poipoiiii/HomeLab_Android/blob/main/server/image-edit/README.md)
+- **设计与实测数据**：[image-edit-design.md](https://github.com/poipoiiii/HomeLab_Android/blob/main/docs/image-edit-design.md)
 - **实测**：1088×1088、30 步、CFG 1.0 约 4 分钟/张，峰值显存约 22GB；批量 8 张约 30 分钟。调用链为 App → 网关 `8094` → ComfyUI `127.0.0.1:8188`。
+- **网络**：Tailscale 跑在 WSL 里（节点 `home`），手机直接用 `http://<WSL 的 tailnet IP>:8094`，不需要 Windows 端口转发；Windows 本机可用 `localhost:8094`。它和 ComfyUI 都装了闲置自动停：30 分钟没修图会释放显存，提交任务时自动唤醒。
 
 ## 存储约定
 
@@ -238,10 +240,10 @@ Android App 的「AI 修图」页和对话里的 `edit_photo` 工具，会把照
 ## 更多文档
 
 - [AGENTS.md](AGENTS.md)：项目约束、C 盘禁令、排错速查、运维命令
-- [homelab_android/README.md](homelab_android/README.md)：Android 客户端构建与首次配置
-- [homelab_android/docs/image-edit-android.md](homelab_android/docs/image-edit-android.md)：AI 修图手机端（入口、配置、模式、对话工具、构建排错）
-- [homelab_android/server/image-edit/README.md](homelab_android/server/image-edit/README.md)：AI 修图服务端（部署、模型、API、运维调参）
-- [homelab_android/docs/image-edit-design.md](homelab_android/docs/image-edit-design.md)：修图服务的接口、状态机与本机实测数据
+- [HomeLab_Android](https://github.com/poipoiiii/HomeLab_Android)：Android 客户端构建与首次配置
+- [image-edit-android.md](https://github.com/poipoiiii/HomeLab_Android/blob/main/docs/image-edit-android.md)：AI 修图手机端（入口、配置、模式、对话工具、构建排错）
+- [server/image-edit/README.md](https://github.com/poipoiiii/HomeLab_Android/blob/main/server/image-edit/README.md)：AI 修图服务端（部署、模型、API、运维调参）
+- [image-edit-design.md](https://github.com/poipoiiii/HomeLab_Android/blob/main/docs/image-edit-design.md)：修图服务的接口、状态机与本机实测数据
 - [lab-tools/AGENT-REQUIREMENTS.md](homelab/lab-tools/AGENT-REQUIREMENTS.md)：能力清单、权限拆分、验收标准
 - [branding/README.md](homelab/branding/README.md)：一键换全站图标
 

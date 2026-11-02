@@ -45,6 +45,17 @@ cookies.txt
 *.pem
 *.key
 
+# —— 独立仓库：自带 remote，不并入本仓库 ——
+homelab_android/
+
+# —— Android 本地配置与签名 ——
+local.properties
+.gradle/
+*.apk
+*.aab
+*.keystore
+*.jks
+
 # —— Python / 构建缓存 ——
 __pycache__/
 *.py[cod]
