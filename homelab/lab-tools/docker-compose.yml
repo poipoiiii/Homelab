@@ -31,6 +31,11 @@ services:
       - AUDIT_PATH=/audit/actions.jsonl
       # B 站搜索复用 MeTube 那份 cookies，只读
       - BILI_COOKIES=/cookies/cookies.txt
+      # 下载前要求目标媒体目录至少剩余这么多 GB；0 表示关闭检查
+      - MEDIA_MIN_FREE_GB=${MEDIA_MIN_FREE_GB:-20}
+      # 只读挂载的备份产物，/status 状态页用
+      - BACKUP_DIR=/backup
+      - MC_BACKUP_DIR=/backup-mc
       # 下载完成通知（两种后端二选一；都配时优先自建应用，未配置则只写日志）
       # 自建应用：企业 ID + 应用 Secret + AgentId，默认发给应用可见范围内全部成员
       - WECOM_CORP_ID=${WECOM_CORP_ID:-}
@@ -45,6 +50,14 @@ services:
     volumes:
       - lab_tools_audit:/audit
       - /home/ubuntu/homelab/metube/cookies.txt:/cookies/cookies.txt:ro
+      # 媒体目录只读挂载：只做 statvfs 余量检查，不写入
+      - /mnt/d/game_video_:/media/game_video:ro
+      - /mnt/d/yt_video_:/media/yt_video:ro
+      - /mnt/d/mv__:/media/movies:ro
+      - /mnt/d/for_jellyfin/anime:/media/anime:ro
+      # 备份产物只读挂载：/status 只读最近一次备份的时间和大小
+      - /mnt/d/ubuntu_/.cache/backup:/backup:ro
+      - /mnt/d/ubuntu_/.cache/homelab-migration/backup/mc-daily:/backup-mc:ro
     networks:
       - default
       - bill_ai

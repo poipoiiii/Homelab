@@ -15,6 +15,9 @@ import httpx
 
 log = logging.getLogger("labtools.wecom")
 
+# httpx 的 INFO 日志会把 gettoken 的 corpsecret、message/send 的 access_token 写进容器日志
+logging.getLogger("httpx").setLevel(logging.WARNING)
+
 API_BASE = "https://qyapi.weixin.qq.com/cgi-bin"
 TIMEOUT = 8
 

@@ -1,6 +1,6 @@
 # Agent 能力需求清单（v2：可写 + 下载）
 
-> 状态：P0 已实现（MeTube 下载 + 容器启停/重启）；下载完成通知支持企业微信自建应用（发给个人）和群机器人两种通道；下载状态查询/取消、Pinchflat 只读待做。
+> 状态：P0/P1 下载闭环已实现（MeTube 下载 + 容器启停/重启 + 队列查询/取消 + 余量预检）；下载完成通知支持企业微信自建应用（发给个人）和群机器人两种通道；Pinchflat 只读待做。
 > 目标：在只读工具（lab-tools）基础上，增加“启停容器”和“按 URL 下载视频”两类动作，并接入 LibreChat。
 
 ## 1. 当前容器盘点
@@ -54,14 +54,16 @@
   - 通用发送组件在 `labtools/wecom.py`，被 `labtools/notify.py` 按环境变量装配
   - 首选自建应用：`WECOM_CORP_ID` + `WECOM_SECRET` + `WECOM_AGENT_ID`，默认 `WECOM_TOUSER=@all`（应用可见范围内全部成员）
   - 备选群机器人：`WECOM_WEBHOOK`；两者都配时优先自建应用；都未配置时只写日志
+  - 番剧/播放列表会被 MeTube 拆成每集一个 URL，watcher 按「落盘目录 + 提交时间」关联；最后一条 done 静置 `DOWNLOAD_SETTLE_SECONDS`（默认 60 秒）后汇总成一条通知
   - 企业微信后台「接收消息」的 Token / EncodingAESKey / 回调 URL 与发消息无关，发消息只需要 CorpID、应用 Secret、AgentId
   - 任务状态落在 `/audit/downloads.json`，重启不丢；已完成记录保留 7 天
 
-### P1：下载状态与取消
+### P1：下载状态与取消（已实现）
 
-- `list_downloads()`：列出进行中/最近完成（可直接复用 watcher 的 `/history` 轮询结果）
-- `cancel_download(id)`：取消排队或进行中的任务
-- 当前 MeTube 的 `/add` 是明确可用的；watcher 依赖 `/history` 返回的 queue/done，若版本差异导致接口不可用，只会记日志，不影响提交下载
+- `list_downloads(limit)`：本地 watcher 快照 + MeTube `/history` 队列，返回进行中、完成和失败原因
+- `cancel_download(url | job_id)`：走 MeTube `POST /delete`（`where=queue`、`delete_files=false`），只移除队列项，不删已落盘文件；成功后本地任务标记为 `cancelled`
+- 提交前用 `statvfs` 检查目标媒体目录余量（`MEDIA_MIN_FREE_GB`，默认 20 GB），低于阈值直接拒绝；同一链接已在队列时返回 `duplicate`，不重复提交
+- MeTube 接口不可用时 `list_downloads` 返回 `metube: unreachable`，本地任务仍然可查，不影响提交下载
 
 ### P1：Pinchflat 只读
 

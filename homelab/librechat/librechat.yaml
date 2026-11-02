@@ -12,7 +12,7 @@ mcpServers:
     type: streamable-http
     url: http://lab-tools:8765/mcp
     title: "实验室工具"
-    description: "只读查询容器状态、日志、磁盘占用和记账流水"
+    description: "查询容器状态/日志/磁盘占用、搜索并下载片源、查看下载队列、查记账流水、启停容器"
     timeout: 60000
     initTimeout: 20000
     requiresOAuth: false

@@ -20,7 +20,11 @@ log = logging.getLogger("labtools.watcher")
 
 STATE_PATH = os.getenv("DOWNLOAD_STATE", os.path.join(os.path.dirname(AUDIT_PATH), "downloads.json"))
 POLL_SECONDS = max(10, int(os.getenv("DOWNLOAD_POLL_SECONDS", "30")))
+# 播放列表没有父任务 ID，最后一条 done 之后要静置这么久才认为整批结束
+SETTLE_SECONDS = max(10, int(os.getenv("DOWNLOAD_SETTLE_SECONDS", "60")))
 KEEP_DONE_SECONDS = 7 * 24 * 3600
+# 这两个状态都不再轮询，只等过期清理
+DONE_STATES = ("done", "cancelled")
 
 _lock = threading.Lock()
 _wake = threading.Event()
@@ -62,11 +66,41 @@ def _same_url(left: str, right: str) -> bool:
     return (left or "").rstrip("/") == (right or "").rstrip("/")
 
 
+def _entry_ts(entry: dict) -> float:
+    """MeTube 的 timestamp 是纳秒，兼容秒级。"""
+    raw = entry.get("timestamp") or 0
+    try:
+        value = int(raw)
+    except (TypeError, ValueError):
+        return 0.0
+    return value / 1e9 if value > 10**12 else float(value)
+
+
+def _job_folder(job: dict) -> str:
+    folder = (job.get("target") or "").rstrip("/")
+    series = (job.get("series") or "").strip()
+    return f"{folder}/{series}" if series else folder
+
+
+def _submitted_after(job: dict, entry: dict) -> bool:
+    """只要提交之后出现的记录，避免把上一次同名下载算进来；留 2 分钟时钟误差。"""
+    submitted = float(job.get("submitted_at") or 0)
+    if not submitted:
+        return True
+    return _entry_ts(entry) >= submitted - 120
+
+
 def _entry_matches(job: dict, entry: dict) -> bool:
     job_id = job.get("id")
     if job_id and entry.get("id") == job_id:
         return True
-    return _same_url(entry.get("url", ""), job["url"])
+    if not _submitted_after(job, entry):
+        return False
+    if _same_url(entry.get("url", ""), job["url"]):
+        return True
+    # 播放列表/番剧：MeTube 把父链接拆成每集一个 URL，只能按落盘目录关联
+    folder = (entry.get("folder") or "").rstrip("/")
+    return bool(folder) and folder == _job_folder(job)
 
 
 def _new_done(job: dict, done: list[dict]) -> list[dict]:
@@ -96,7 +130,7 @@ def _message(job: dict) -> str:
         lines.append(f"数量：{total} 个视频" + (f"，失败 {len(errors)} 个" if errors else ""))
     if errors:
         lines.append(f"原因：{errors[0]}")
-    elif job.get("filename"):
+    elif job.get("filename") and total == 1:
         lines.append(f"文件：{job['filename']}")
     lines.append(f"链接：{job['url']}")
     return "\n".join(lines)
@@ -104,14 +138,21 @@ def _message(job: dict) -> str:
 
 def _announce(job: dict) -> None:
     message = _message(job)
-    notify.send_text(message)
+    sent = False
+    for _ in range(3):
+        if notify.send_text(message):
+            sent = True
+            break
+        time.sleep(2)
+    if not sent:
+        log.warning("企业微信通知发送失败：%s", message.splitlines()[0])
     log.info("下载任务结束：%s（%s）", job.get("title"), message.splitlines()[0])
 
 
 def _loop() -> None:
     while True:
         with _lock:
-            pending = [job for job in _jobs.values() if job.get("state") != "done"]
+            pending = [job for job in _jobs.values() if job.get("state") not in DONE_STATES]
         if not pending:
             _wake.wait(60)
             _wake.clear()
@@ -132,24 +173,29 @@ def _loop() -> None:
         with _lock:
             now = time.time()
             for job in list(_jobs.values()):
-                if job.get("state") == "done":
+                if job.get("state") in DONE_STATES:
                     continue
 
                 queued = [entry for entry in queue if _entry_matches(job, entry)]
                 if queued:
                     job["seen_queue"] = True
-                    # 第一次见到它排队时，把当时已在 done 里的同名记录记为基线
-                    if job.get("baseline") is None:
-                        job["baseline"] = [
-                            entry.get("id") for entry in done
-                            if _entry_matches(job, entry) and entry.get("id")
-                        ]
                     job["id"] = queued[0].get("id") or job.get("id")
-                    job["title"] = queued[0].get("title") or job.get("title")
+                    job["title"] = job.get("title") or queued[0].get("title") or ""
+                    # 队列还在跑，重置完成判定，避免播放列表提前收尾
+                    job.pop("done_since", None)
+                    job.pop("done_seen", None)
                     continue
 
                 entries = _new_done(job, done)
-                if not entries or not job.get("seen_queue"):
+                if not entries:
+                    continue
+
+                # 播放列表会分批出现，条目数稳定 SETTLE_SECONDS 后才算整批结束
+                if job.get("done_seen") != len(entries):
+                    job["done_seen"] = len(entries)
+                    job["done_since"] = now
+                    continue
+                if now - float(job.get("done_since") or now) < SETTLE_SECONDS:
                     continue
 
                 errors = [
@@ -160,15 +206,15 @@ def _loop() -> None:
                 job.update({
                     "state": "done",
                     "finished_at": now,
-                    "title": job.get("title") or (entries[0].get("title") or ""),
-                    "filename": entries[0].get("filename") or "",
+                    "title": job.get("title") or job.get("series") or (entries[0].get("title") or ""),
+                    "filename": (entries[0].get("filename") or "") if len(entries) == 1 else "",
                     "errors": errors,
                     "done_count": len(entries),
                 })
                 finished.append(dict(job))
 
             for url, job in list(_jobs.items()):
-                if job.get("state") == "done" and now - (job.get("finished_at") or now) > KEEP_DONE_SECONDS:
+                if job.get("state") in DONE_STATES and now - (job.get("finished_at") or now) > KEEP_DONE_SECONDS:
                     _jobs.pop(url, None)
             _save()
 
@@ -210,6 +256,37 @@ def track(url: str, target: str, series: str = "", title: str = "") -> None:
     _ensure_worker()
 
 
+def snapshot() -> list[dict]:
+    """返回当前登记的任务快照（按提交时间倒序），供 MCP 工具和状态页读取。"""
+    with _lock:
+        rows = [dict(job) for job in _jobs.values()]
+    rows.sort(key=lambda job: float(job.get("submitted_at") or 0), reverse=True)
+    return rows
+
+
+def find_active(url: str) -> dict | None:
+    """同一个链接已经在排队/下载时返回该任务，避免模型重复提交。"""
+    with _lock:
+        for job in _jobs.values():
+            if job.get("state") not in DONE_STATES and _same_url(job.get("url", ""), url):
+                return dict(job)
+    return None
+
+
+def mark_cancelled(url: str = "", job_id: str = "") -> None:
+    """MeTube 队列项已被移除，同步把本地任务标记为取消，避免一直显示进行中。"""
+    with _lock:
+        changed = False
+        for job in _jobs.values():
+            if job.get("state") in DONE_STATES:
+                continue
+            if (job_id and job.get("id") == job_id) or (url and _same_url(job.get("url", ""), url)):
+                job.update({"state": "cancelled", "finished_at": time.time()})
+                changed = True
+        if changed:
+            _save()
+
+
 _load()
-if any(job.get("state") != "done" for job in _jobs.values()):
+if any(job.get("state") not in DONE_STATES for job in _jobs.values()):
     _ensure_worker()
