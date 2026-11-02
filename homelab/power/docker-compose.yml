@@ -30,7 +30,7 @@ services:
       - TZ=Asia/Shanghai
       - DOCKER_PROXY_READ=http://power-proxy-read:2375
       - DOCKER_PROXY_WRITE=http://power-proxy-write:2375
-      # 宿主机 systemd 代理（MCSManager / 1Panel），由 host-agent 提供
+      # 宿主机 systemd 代理（MCSManager / 1Panel / ComfyUI），由 host-agent 提供
       - HOST_AGENT_URL=http://host.docker.internal:8093
     extra_hosts:
       - "host.docker.internal:host-gateway"

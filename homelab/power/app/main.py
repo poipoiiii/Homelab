@@ -41,15 +41,25 @@ GROUP_ORDER = ["AI 助手", "影音", "家庭服务", "入口与运维", "宿主
 # 没打 dev.dozzle.group 标签的老容器，在这里归组
 GROUP_FALLBACK = {"cloudreve": "家庭服务", "frpc": "入口与运维"}
 
-# 宿主机 systemd 服务单独成组，启动顺序：daemon 先、web 后
+# 宿主机 systemd 服务单独成组，启动顺序：daemon 先、web 后；ComfyUI 最后（闲置可停，释放显存）
 HOST_GROUP = "宿主机服务"
-UNIT_ORDER = {"mcsm-daemon.service": 10, "mcsm-web.service": 20, "1panel.service": 30}
+UNIT_ORDER = {
+    "mcsm-daemon.service": 10,
+    "mcsm-web.service": 20,
+    "1panel.service": 30,
+    "comfyui.service": 40,
+}
 UNIT_STATE = {"active": "running", "activating": "restarting", "failed": "dead", "inactive": "exited"}
 
 app = FastAPI(title="power", docs_url=None, redoc_url=None)
 BRANDING_DIR = os.getenv("BRANDING_DIR", "/branding")
 if os.path.isdir(BRANDING_DIR):
     app.mount("/branding", StaticFiles(directory=BRANDING_DIR), name="branding")
+
+# 面板自带静态资源（背景图等），随镜像一起发布
+STATIC_DIR = os.path.join(os.path.dirname(__file__), "static")
+if os.path.isdir(STATIC_DIR):
+    app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
 
 def _containers() -> list[dict]:
@@ -63,11 +73,18 @@ def _containers() -> list[dict]:
         if not name or name in HIDDEN:
             continue
         labels = item.get("Labels") or {}
+        # 优先取映射到宿主机的端口；没有映射才退回镜像自身暴露的端口
+        published = sorted({p["PublicPort"] for p in item.get("Ports") or [] if p.get("PublicPort")})
+        if published:
+            ports = published
+        else:
+            ports = sorted({p["PrivatePort"] for p in item.get("Ports") or [] if p.get("PrivatePort")})[:2]
         result.append({
             "name": name,
             "state": item.get("State", "unknown"),
             "group": labels.get("dev.dozzle.group") or GROUP_FALLBACK.get(name) or "未分组",
             "kind": "container",
+            "ports": ports,
         })
 
     result.sort(key=lambda c: (START_ORDER.get(c["name"], 500), c["name"]))
@@ -244,92 +261,157 @@ PAGE = r"""<!doctype html>
 <link rel="icon" type="image/png" href="/branding/favicon-32.png" sizes="32x32">
 <style>
   :root {
-    --bg: #0d0f12;
-    --surface: #15181d;
-    --surface-hi: #1b1f26;
-    --line: #242932;
-    --line-hi: #333a45;
-    --text: #e7e9ee;
-    --muted: #8b93a1;
-    --green: #3ecf8e;
-    --red: #e4605e;
-    --focus: #5aa9ff;
+    --bg: #08111c;
+    --surface: rgba(13, 22, 35, .40);
+    --surface-hi: rgba(26, 40, 58, .56);
+    --line: rgba(255, 255, 255, .12);
+    --line-hi: rgba(255, 255, 255, .20);
+    --text: #eef3fa;
+    --muted: #a9b7ca;
+    --green: #4be3a1;
+    --red: #f0716e;
+    --focus: #6fb6ff;
   }
   * { box-sizing: border-box; }
   html, body { margin: 0; background: var(--bg); color: var(--text); }
   body {
+    min-height: 100vh;
     font: 14px/1.55 -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC",
           "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
     -webkit-font-smoothing: antialiased;
+  }
+  /* 固定背景层：竖图在手机上也不会随页面滚动露出空白 */
+  body::before {
+    content: ""; position: fixed; inset: 0; z-index: 0;
+    background: url("/static/power-bg.jpg") center 30% / cover no-repeat;
+  }
+  body::after {
+    content: ""; position: fixed; inset: 0; z-index: 0;
+    background:
+      radial-gradient(120% 80% at 50% 0%, rgba(6, 16, 30, .18), transparent 60%),
+      linear-gradient(180deg, rgba(4, 10, 18, .30), rgba(4, 10, 18, .52));
   }
   ::selection { background: #2b4d70; color: #fff; }
   ::-webkit-scrollbar { width: 8px; height: 8px; }
   ::-webkit-scrollbar-thumb { background: #2a3038; border-radius: 6px; }
   ::-webkit-scrollbar-track { background: transparent; }
 
-  .wrap { max-width: 720px; margin: 0 auto; padding: 22px 16px 28px; }
+  .wrap { position: relative; z-index: 1; max-width: 720px; margin: 0 auto; padding: 22px 16px 28px; }
   header { display: flex; align-items: baseline; justify-content: space-between; gap: 14px; }
   .brand { display: flex; align-items: center; gap: 8px; }
   .brand img { width: 24px; height: 24px; border-radius: 7px; object-fit: cover; display: block; }
-  h1 { margin: 0; font-size: 19px; font-weight: 650; letter-spacing: -0.01em; }
-  header .hint { color: var(--muted); font-size: 12.5px; }
+  h1 { margin: 0; font-size: 19px; font-weight: 650; letter-spacing: -0.01em; text-shadow: 0 1px 16px rgba(0, 0, 0, .72); }
+  header .hint { color: #c2cedd; font-size: 12.5px; text-shadow: 0 1px 12px rgba(0, 0, 0, .78); }
 
   .banner {
-    margin: 16px 0 0; padding: 10px 13px; border-radius: 9px;
-    border: 1px solid #5a2c2c; background: #1e1414; color: #f0b4b3; font-size: 13px;
+    position: fixed; z-index: 20; left: 50%; top: 14px; transform: translateX(-50%);
+    width: max-content; max-width: calc(100vw - 24px);
+    margin: 0; padding: 10px 14px; border-radius: 9px;
+    border: 1px solid #5a2c2c; background: rgba(42, 15, 18, .86); color: #f6c0bf; font-size: 13px;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, .45);
+    backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
   }
   .banner[hidden] { display: none; }
 
-  .group { margin-top: 18px; }
+  .group { margin-top: 14px; }
   .group-head {
-    display: flex; align-items: center; gap: 10px; padding: 0 2px 8px;
+    display: flex; align-items: center; gap: 10px; row-gap: 6px;
+    padding: 0 2px 8px; flex-wrap: wrap;
   }
-  .group-head h2 { margin: 0; font-size: 12.5px; font-weight: 600; letter-spacing: .04em; color: var(--muted); }
-  .group-head .count { margin-left: auto; font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
+
+  /* 分组头左侧的折叠热区（右侧按钮不参与折叠，避免误触） */
+  .group-toggle {
+    display: flex; align-items: center; gap: 10px; flex: 1; min-width: 0;
+    cursor: pointer; user-select: none; -webkit-tap-highlight-color: transparent;
+  }
+  .group-toggle:focus-visible { outline: 2px solid var(--focus); outline-offset: 3px; border-radius: 6px; }
+
+  /* 折叠箭头 */
+  .chev {
+    flex: none; width: 8px; height: 8px; margin-left: 2px;
+    border-right: 1.6px solid #9fb2c8; border-bottom: 1.6px solid #9fb2c8;
+    transform: rotate(45deg); transition: transform .18s ease; opacity: .85;
+  }
+  .group[data-open="1"] .chev { transform: rotate(-135deg); }
+
+  /* 折叠时只留分组头；展开时把「已停」提示收起来 */
+  .group[data-open="0"] ul { display: none; }
+  .group[data-open="1"] .issues { display: none; }
+  .issues {
+    margin: -2px 2px 8px; font-size: 12px; color: #f0a6a4; line-height: 1.5;
+    text-shadow: 0 1px 6px rgba(0, 0, 0, .6);
+  }
+  .issues[hidden] { display: none; }
+  .group-head h2 { margin: 0; font-size: 12.5px; font-weight: 600; letter-spacing: .04em; color: #d2ddeb; text-shadow: 0 1px 10px rgba(0, 0, 0, .85); }
+  .group-head .count { margin-left: auto; font-size: 12px; color: #b8c6d8; font-variant-numeric: tabular-nums; text-shadow: 0 1px 10px rgba(0, 0, 0, .85); }
   .group-head .count b { color: var(--text); font-weight: 600; }
 
   ul { list-style: none; margin: 0; padding: 0; background: var(--surface);
-       border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
-  li { display: flex; align-items: center; gap: 10px; padding: 7px 13px; }
+       border: 1px solid var(--line); border-radius: 10px; overflow: hidden;
+       backdrop-filter: blur(16px) saturate(130%); -webkit-backdrop-filter: blur(16px) saturate(130%);
+       box-shadow: 0 14px 34px rgba(0, 0, 0, .26); }
+  li { display: flex; align-items: center; gap: 10px; padding: 7px 12px; }
   li + li { border-top: 1px solid var(--line); }
   li:hover { background: var(--surface-hi); }
 
   .dot { width: 7px; height: 7px; border-radius: 50%; flex: none; background: #4a5260; }
   .dot.on { background: var(--green); box-shadow: 0 0 0 3px rgba(62,207,142,.12); }
   .dot.warn { background: #c9a227; }
-  .cname { font-size: 13.5px; font-weight: 500; }
-  .state { margin-left: auto; font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
-  .mem { display: flex; align-items: center; gap: 7px; font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
+  .cname { font-size: 13.5px; font-weight: 500; text-shadow: 0 1px 6px rgba(0, 0, 0, .55); }
+  /* 容器占用的宿主机端口 */
+  .port {
+    flex: none; font: 11px/1.35 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    color: #93abc6; padding: 2px 5px; border-radius: 5px;
+    background: rgba(255, 255, 255, .06); border: 1px solid rgba(255, 255, 255, .10);
+  }
+  .state { margin-left: auto; font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; text-shadow: 0 1px 6px rgba(0, 0, 0, .55); }
+  .mem { display: flex; align-items: center; gap: 7px; font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; text-shadow: 0 1px 6px rgba(0, 0, 0, .55); }
   .mem-bar { width: 34px; height: 3px; border-radius: 2px; background: #262c35; overflow: hidden; }
   .mem-bar i { display: block; height: 100%; background: var(--focus); opacity: .7; }
 
   button {
-    appearance: none; cursor: pointer; border-radius: 7px; padding: 4px 11px;
+    appearance: none; cursor: pointer; border-radius: 7px; padding: 6px 12px;
+    min-height: 32px; touch-action: manipulation;
     font: inherit; font-size: 12.5px; font-weight: 600; line-height: 1.4;
-    border: 1px solid var(--line-hi); background: transparent; color: var(--text);
+    border: 1px solid var(--line-hi); background: rgba(9, 17, 28, .36); color: var(--text);
+    backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px);
     transition: border-color .15s ease, color .15s ease, background .15s ease, transform .08s ease;
   }
-  button:hover:not(:disabled) { border-color: var(--red); color: #f2a3a2; }
-  button.start:hover:not(:disabled) { border-color: var(--green); color: #9fe6c6; }
+  button:hover:not(:disabled) { border-color: var(--red); color: #ffb3b1; background: rgba(22, 32, 46, .72); }
+  button.start:hover:not(:disabled) { border-color: var(--green); color: #9ff0cd; }
   button:active:not(:disabled) { transform: translateY(1px); }
   button:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
   button:disabled { cursor: default; opacity: .45; }
+  button[data-confirm="1"] {
+    border-color: var(--red); background: rgba(228, 96, 94, .14); color: #f2a3a2;
+  }
+  button[data-confirm="1"]:hover:not(:disabled) { background: rgba(228, 96, 94, .22); }
   button[data-busy="1"] { color: transparent; position: relative; }
   button[data-busy="1"]::after {
     content: ""; position: absolute; inset: 0; margin: auto; width: 12px; height: 12px;
     border: 2px solid currentColor; border-top-color: transparent; border-radius: 50%;
     animation: spin .7s linear infinite;
   }
-  button.group-act { padding: 3px 10px; font-size: 12px; }
+  button.group-act { padding: 5px 11px; min-height: 30px; font-size: 12px; }
   @keyframes spin { to { transform: rotate(360deg); } }
   .empty { color: var(--muted); font-size: 13px; margin-top: 22px; }
-  footer { margin-top: 26px; color: #6b7280; font-size: 11.5px; }
+  footer { margin-top: 26px; color: #a7b7ca; font-size: 11.5px; text-shadow: 0 1px 12px rgba(0, 0, 0, .85); }
   @media (max-width: 520px) {
-    .wrap { padding: 20px 12px 32px; }
+    .wrap { padding: 12px 12px 16px; }
     header { display: block; }
-    header .hint { display: block; margin-top: 4px; }
+    /* 手机上省掉副标题和脚注，把高度留给列表 */
+    header .hint { display: none; }
+    footer { display: none; }
     .state { display: none; }
+    .mem { margin-left: auto; }
     .mem-bar { display: none; }
+    .group { margin-top: 12px; }
+    .group-head { gap: 8px; }
+    .group-head .count { font-size: 11.5px; }
+    li { padding: 8px 11px; }
+    button { min-height: 40px; padding: 8px 14px; font-size: 13px; }
+    button.group-act { min-height: 32px; padding: 5px 10px; font-size: 12px; }
+    .port { font-size: 10.5px; padding: 2px 4px; }
   }
 </style>
 </head>
@@ -342,9 +424,9 @@ PAGE = r"""<!doctype html>
     </div>
     <span class="hint">容器与宿主机服务都在这里</span>
   </header>
-  <div class="banner" id="banner" hidden></div>
+  <div class="banner" id="banner" role="status" aria-live="polite" hidden></div>
   <div id="body"><p class="empty">加载中…</p></div>
-  <footer>只执行 stop / start，不删容器、不碰数据卷；刷新间隔 10 秒，内存为 Docker 即时统计。</footer>
+  <footer>单容器停止、整组启停需连点两次确认（4 秒后自动取消）；刷新间隔 10 秒，内存为 Docker 即时统计。</footer>
 </div>
 <script>
 const body = document.getElementById('body');
@@ -358,6 +440,37 @@ const LABELS = {
 function showBanner(text) {
   banner.textContent = text;
   banner.hidden = !text;
+}
+
+// 防误触：停止类操作要点两次；确认期间暂停自动刷新，避免按钮被重绘
+let armed = null;
+let loading = false;
+let touching = false;
+
+function disarm() {
+  if (!armed) return;
+  clearTimeout(armed.timer);
+  delete armed.btn.dataset.confirm;
+  armed.btn.textContent = armed.label;
+  armed = null;
+  showBanner('');
+}
+
+function requestConfirm(btn, text, run) {
+  if (armed && armed.btn === btn) {
+    disarm();
+    run();
+    return;
+  }
+  disarm();
+  const label = btn.textContent;
+  btn.dataset.confirm = '1';
+  btn.textContent = text;
+  showBanner('再点一次「' + text + '」才会执行，4 秒后自动取消');
+  const timer = setTimeout(() => {
+    if (armed && armed.btn === btn) disarm();
+  }, 4000);
+  armed = { btn, label, timer };
 }
 
 function dotClass(state) {
@@ -398,6 +511,44 @@ function memoryNode(item, peak) {
   return wrap;
 }
 
+// 分组折叠状态记在 localStorage：默认全部收起，只留分组头和「已停」提示
+const OPEN_KEY = 'power-open-groups';
+
+function openGroups() {
+  try {
+    const raw = localStorage.getItem(OPEN_KEY);
+    return new Set(raw ? JSON.parse(raw) : []);
+  } catch (err) {
+    return new Set();
+  }
+}
+
+function saveOpenGroups(set) {
+  try {
+    localStorage.setItem(OPEN_KEY, JSON.stringify([...set]));
+  } catch (err) {}
+}
+
+function toggleGroup(section, name) {
+  const next = section.dataset.open !== '1';
+  section.dataset.open = next ? '1' : '0';
+  const head = section.querySelector('.group-toggle');
+  if (head) head.setAttribute('aria-expanded', next ? 'true' : 'false');
+  const set = openGroups();
+  if (next) set.add(name); else set.delete(name);
+  saveOpenGroups(set);
+}
+
+function portNode(c) {
+  if (!c.ports || !c.ports.length) return null;
+  const span = document.createElement('span');
+  span.className = 'port';
+  const shown = c.ports.slice(0, 3).map((p) => ':' + p).join(' ');
+  span.textContent = shown + (c.ports.length > 3 ? ' +' + (c.ports.length - 3) : '');
+  span.title = '宿主机端口 ' + c.ports.join(' / ');
+  return span;
+}
+
 function render(groups) {
   body.innerHTML = '';
   if (!groups.length) {
@@ -405,27 +556,68 @@ function render(groups) {
     return;
   }
 
+  const open = openGroups();
+
   for (const g of groups) {
     const section = document.createElement('section');
     section.className = 'group';
+    section.dataset.open = open.has(g.name) ? '1' : '0';
     const peak = Math.max(1, ...g.containers.map((c) => (c.mem && c.mem.used) || 0));
+
+    const stopped = g.containers
+      .filter((c) => c.state !== 'running')
+      .map((c) => c.name.replace(/\.service$/, ''));
 
     const head = document.createElement('div');
     head.className = 'group-head';
+
+    const toggle = document.createElement('div');
+    toggle.className = 'group-toggle';
+    toggle.setAttribute('role', 'button');
+    toggle.setAttribute('tabindex', '0');
+    toggle.setAttribute('aria-expanded', open.has(g.name) ? 'true' : 'false');
+
     const h2 = document.createElement('h2');
     h2.textContent = g.name;
     const count = document.createElement('span');
     count.className = 'count';
     count.innerHTML = '<b>' + g.running + '</b> / ' + g.total + ' 运行' +
       (g.mem_used ? ' · ' + fmtBytes(g.mem_used) : '');
-    head.append(h2, count);
 
     const stopMode = g.running > 0;
     const bulk = document.createElement('button');
     bulk.className = 'group-act';
     bulk.textContent = stopMode ? '全部关闭' : '全部启动';
-    bulk.onclick = () => act('group', g.name, stopMode, bulk);
-    head.appendChild(bulk);
+    bulk.onclick = () => {
+      const run = () => act('group', g.name, stopMode, bulk);
+      // 整组操作影响多个容器，启停都要求二次确认
+      requestConfirm(bulk, stopMode ? '确认全关' : '确认全启', run);
+    };
+
+    const chev = document.createElement('span');
+    chev.className = 'chev';
+    chev.setAttribute('aria-hidden', 'true');
+    toggle.append(h2, count, chev);
+
+    toggle.addEventListener('click', () => toggleGroup(section, g.name));
+    toggle.addEventListener('keydown', (event) => {
+      if (event.key === 'Enter' || event.key === ' ') {
+        event.preventDefault();
+        toggleGroup(section, g.name);
+      }
+    });
+
+    head.append(toggle, bulk);
+
+    // 折叠状态下直接列出没在跑的，不用展开也能看到异常
+    const issues = document.createElement('p');
+    issues.className = 'issues';
+    if (stopped.length) {
+      issues.textContent = '已停：' + stopped.slice(0, 5).join('、') +
+        (stopped.length > 5 ? ' 等 ' + stopped.length + ' 个' : '');
+    } else {
+      issues.hidden = true;
+    }
 
     const list = document.createElement('ul');
     for (const c of g.containers) {
@@ -438,26 +630,34 @@ function render(groups) {
       const state = document.createElement('span');
       state.className = 'state';
       state.textContent = LABELS[c.state] || c.state;
-      li.append(dot, name, state);
-      li.appendChild(memoryNode(c, peak));
+
+      li.append(dot, name);
+      const port = portNode(c);
+      if (port) li.appendChild(port);
+      li.append(state, memoryNode(c, peak));
 
       const btn = document.createElement('button');
       const stopMode = c.state === 'running';
       btn.className = stopMode ? '' : 'start';
       btn.textContent = stopMode ? '关闭' : '启动';
       const scope = c.kind === 'unit' ? 'host' : 'container';
-      btn.onclick = () => act(scope, c.name, stopMode, btn);
+      btn.onclick = () => {
+        const run = () => act(scope, c.name, stopMode, btn);
+        if (stopMode) requestConfirm(btn, '确认关闭', run); else run();
+      };
 
       li.appendChild(btn);
       list.appendChild(li);
     }
 
-    section.append(head, list);
+    section.append(head, issues, list);
     body.appendChild(section);
   }
 }
 
-async function load() {
+async function load(force = false) {
+  if (armed || (!force && (loading || touching))) return;
+  loading = true;
   try {
     const res = await fetch('/api/state', { cache: 'no-store' });
     if (!res.ok) throw new Error('HTTP ' + res.status);
@@ -466,6 +666,8 @@ async function load() {
   } catch (err) {
     body.innerHTML = '<p class="empty">读不到容器状态</p>';
     showBanner('无法连接本机 Docker：' + err.message);
+  } finally {
+    loading = false;
   }
 }
 
@@ -485,9 +687,25 @@ async function act(scope, name, stopMode, btn) {
   } catch (err) {
     showBanner('操作失败：' + err.message);
   } finally {
-    await load();
+    await load(true);
   }
 }
+
+// 手指按下时不重绘列表，避免按钮在指尖下被替换
+let touchTimer = null;
+document.addEventListener('pointerdown', () => {
+  touching = true;
+  clearTimeout(touchTimer);
+  touchTimer = setTimeout(() => { touching = false; }, 1500);
+}, true);
+document.addEventListener('pointerup', () => {
+  touching = false;
+  clearTimeout(touchTimer);
+}, true);
+document.addEventListener('pointercancel', () => {
+  touching = false;
+  clearTimeout(touchTimer);
+}, true);
 
 load();
 setInterval(() => { if (!document.hidden) load(); }, 10000);

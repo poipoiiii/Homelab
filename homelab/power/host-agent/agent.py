@@ -8,7 +8,7 @@ import json
 import subprocess
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-ALLOWED = ("mcsm-web.service", "mcsm-daemon.service", "1panel.service")
+ALLOWED = ("mcsm-web.service", "mcsm-daemon.service", "1panel.service", "comfyui.service")
 LISTEN = ("172.17.0.1", 8093)
 
 

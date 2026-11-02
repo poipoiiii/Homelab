@@ -102,7 +102,7 @@ Pinchflat 的模型是「订阅源 + 定时检查」，适合 YouTube 频道归�
 3. **最小权限代理**：见上节；写代理连 `GET /containers/json` 都会 403。
 4. **路径白名单**：下载目标只认四个枚举值，映射关系固定。
 5. **审计**：每次启停追加一行 JSON 到 `lab_tools_audit` 卷（时间、动作、目标、结果、token）。
-6. **宿主机操作白名单**：`power/host-agent` 只允许 `mcsm-daemon.service`、`mcsm-web.service`、`1panel.service` 的 start/stop，不接任意命令。
+6. **宿主机操作白名单**：`power/host-agent` 只允许 `mcsm-daemon.service`、`mcsm-web.service`、`1panel.service`、`comfyui.service` 的 start/stop，不接任意命令。ComfyUI 闲置时可从电源面板停掉，释放约 16GB 显存。
 7. **默认回环**：除 Dockge 和 AI 修图网关外所有 Web 服务绑定 `127.0.0.1`；Dockge 挂着 `docker.sock`、等价宿主机 root，必须自行加认证或走隧道，不能无鉴权暴露到公网；修图网关无公网端口映射，仅 tailnet 内可达，且每个请求都校验 Bearer Token。
 
 ## 服务清单
