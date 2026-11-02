@@ -1,0 +1,33 @@
+{
+  "name": "poi's home",
+  "short_name": "poi's home",
+  "description": "poi's home 全屏看板",
+  "id": "/branding/sugar/board.html",
+  "start_url": "/branding/sugar/board.html",
+  "scope": "/branding/sugar/",
+  "display": "fullscreen",
+  "display_override": ["fullscreen", "standalone"],
+  "orientation": "any",
+  "background_color": "#0b0509",
+  "theme_color": "#14070f",
+  "icons": [
+    {
+      "src": "/branding/sugar/logo192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/branding/sugar/logo.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/branding/sugar/logo.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ]
+}

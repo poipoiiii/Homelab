@@ -1,0 +1,131 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0b0509">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<title>纯享模式</title>
+<style>
+  html, body {
+    margin: 0;
+    height: 100%;
+    background: #0b0509;
+    overflow: hidden;
+    overscroll-behavior: none;
+  }
+
+  html {
+    height: 100dvh;
+  }
+
+  body {
+    position: fixed;
+    inset: 0;
+    cursor: pointer;
+    touch-action: manipulation;
+    -webkit-tap-highlight-color: transparent;
+    -webkit-touch-callout: none;
+    user-select: none;
+  }
+
+  img {
+    display: block;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    object-position: 50% 30%;
+  }
+
+  /* 竖屏手机：换成竖构图动态背景，取景居中 */
+  @media (orientation: portrait) {
+    img {
+      object-position: 50% 50%;
+    }
+  }
+
+  .hint {
+    position: fixed;
+    left: 50%;
+    bottom: calc(32px + env(safe-area-inset-bottom));
+    transform: translateX(-50%);
+    padding: 9px 18px;
+    border-radius: 999px;
+    background: rgba(24, 8, 18, 0.55);
+    border: 1px solid rgba(255, 214, 230, 0.25);
+    color: #ffe9f2;
+    font: 13px/1.4 "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
+    letter-spacing: 0.06em;
+    white-space: nowrap;
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    opacity: 1;
+    transition: opacity 0.8s ease;
+    pointer-events: none;
+  }
+
+  .hint.hide {
+    opacity: 0;
+  }
+
+  /* 全屏时隐藏光标和提示，只剩画面 */
+  :fullscreen {
+    cursor: none;
+  }
+
+  :fullscreen .hint {
+    display: none;
+  }
+</style>
+</head>
+<body>
+  <img id="bg" src="bg-anim.gif" alt="">
+  <div class="hint" id="hint">点击任意处进入全屏 · Esc 退出</div>
+  <script>
+    var hint = document.getElementById('hint');
+    var root = document.documentElement;
+    var canFullscreen = !!(root.requestFullscreen || root.webkitRequestFullscreen);
+
+    // 横竖屏各用一套动态背景，缺图时退回静态 pure.jpg
+    var bg = document.getElementById('bg');
+    var portraitQuery = window.matchMedia('(orientation: portrait)');
+    function syncBackground() {
+      bg.src = portraitQuery.matches ? 'bg-anim-portrait.gif' : 'bg-anim.gif';
+    }
+    bg.addEventListener('error', function () { bg.src = 'pure.jpg'; });
+    syncBackground();
+    if (portraitQuery.addEventListener) portraitQuery.addEventListener('change', syncBackground);
+
+    function fullscreenElement() {
+      return document.fullscreenElement || document.webkitFullscreenElement;
+    }
+
+    function enterFullscreen() {
+      var request = root.requestFullscreen || root.webkitRequestFullscreen;
+      var result = request.call(root);
+      if (result && result.catch) result.catch(function () {});
+    }
+
+    function exitFullscreen() {
+      var exit = document.exitFullscreen || document.webkitExitFullscreen;
+      if (exit) exit.call(document);
+    }
+
+    // iPhone 的 Safari 不支持元素全屏，改成提示横屏 / 加主屏幕
+    if (!canFullscreen) {
+      hint.textContent = '横屏观看更完整 · 可添加到主屏幕全屏打开';
+    }
+
+    setTimeout(function () { hint.classList.add('hide'); }, 4500);
+    document.body.addEventListener('click', function () {
+      if (fullscreenElement()) {
+        exitFullscreen();
+      } else if (canFullscreen) {
+        enterFullscreen();
+      }
+    });
+  </script>
+</body>
+</html>

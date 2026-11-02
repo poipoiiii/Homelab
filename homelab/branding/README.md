@@ -18,6 +18,39 @@ sudo python3 ~/homelab/branding/apply-avatar.py /path/to/新头像.png
 
 如果图片本身已经换过，直接把新图覆盖 `homelab/favicon.jpeg`，再跑第一条命令即可。
 
+## Homarr 看板主题（砂糖 · 暗夜樱糖）
+
+`apply-sugar-theme.py` 只改 Homarr 的外观，不动应用卡片和布局：
+
+- 背景：`docs/砂糖/8.png` → 1920×1080，压暗 + 轻模糊 + 暗角，写到 `/branding/sugar/bg.jpg`（仅在缺动图时使用）；
+- 动态背景（生成的 GIF，脚本不制作，存在即优先）：
+  - `/branding/sugar/bg-anim.gif` 横屏 960×540，10fps，5.6 MB；
+  - `/branding/sugar/bg-anim-portrait.gif` 竖屏 540×960，10fps，4.7 MB，手机竖屏由 `sugar-theme.css` 的 media query 切换；
+- logo / 头像 / favicon：`docs/砂糖/6.jpg` 裁正方形、切圆角，写到 `/branding/sugar/`；
+- 看板主色 `#d6336c`、副色 `#f783ac`，以及 `sugar-theme.css` 里的糖霜白毛玻璃卡片；
+- 纯享模式：生成 `/branding/sugar/pure.html` + `pure.jpg`，并在看板右下角补一张「纯享模式」卡片。页面按横竖屏自动加载对应的 GIF（缺图退回 `pure.jpg`），点击画面进入浏览器全屏、Esc 退出。
+- 全屏 PWA 外壳：`/branding/sugar/board.html` + `board.json` + `sw.js`。manifest 里 `display: "fullscreen"`，手机用这个地址「添加到主屏幕」后，点图标启动没有状态栏、没有地址栏。
+
+  启动顺序：`poster-land.jpg` / `poster-port.jpg`（从两张 GIF 的首帧导出，60 KB 级）先铺满屏 → 看板 iframe 加载完、动态背景就绪 → 封面淡出（600ms）→ 顶栏与卡片依次浮现（`sugar-theme.css` 里的 `.launch-reveal`）。封面找不到时退化为纯色底，不影响使用。
+
+  手机端（宽度 ≤ 768）底部还有一条可横滑的气泡栏，整条装在一个圆角玻璃外框里（只做一层 `backdrop-filter`，气泡本身不模糊，避免手机上叠 9 层导致卡顿）：外壳从看板 DOM 里读取 `[data-kind="app"]` 卡片的图标（`img[alt]` 就是应用名）和链接动态生成，第一项是「看板」回到首页；只有在首页（`/`、`/boards`、`/boards/<名字>`）才显示，进入设置等二级页面会自动收起。应用点开走**新标签页**（`target="_blank"`），因为 LibreChat 等会发 `X-Frame-Options: SAMEORIGIN`，塞进 iframe 会被浏览器拦掉。同时给看板的 `<html>` 挂 `has-dock`，主题 CSS 据此隐藏原来的 app 卡片并给主区域留出 96px 底部空间。应用增删在 Homarr 里改即可，气泡栏每次启动自动同步。卡片右下角的在线状态点会同步到气泡上（每 4 秒回读一次，颜色直接取原卡片的计算样式；没有 ping 的应用如纯享模式不显示点）。
+
+  **新增应用**：Homarr 右上角铅笔进编辑模式 → 添加应用 → 填名称、地址、图标 → 拖进网格保存。注意两点：① 桌面和**手机两套布局都要放**（气泡栏读的是手机布局渲染出来的 DOM，只放桌面布局手机上读不到）；② 保存后把手机上的 PWA 杀掉重开，气泡栏才会重新生成。气泡顺序跟网格里卡片的顺序一致；不想出现在气泡栏的应用，别放进手机布局即可。状态点需要在该应用的设置里配了 ping 地址，没配就只显示图标。
+
+  ```text
+  手机浏览器打开  https://<你的地址>/branding/sugar/board.html
+  菜单 → 安装应用 / 添加到主屏幕 → 从新图标启动
+  ```
+
+  外壳只是用 iframe 套住 `/`，看板本身的行为不变；原来的 Homarr 图标可以保留（它仍带状态栏）或删掉。注意：往 `branding/` 里**新增**静态文件后必须 `docker restart homarr`，Next 只在启动时扫描 public 目录，否则会 404。
+
+```bash
+sudo python3 ~/homelab/branding/apply-sugar-theme.py            # 默认素材目录 /mnt/d/ubuntu_/docs/砂糖
+sudo python3 ~/homelab/branding/apply-sugar-theme.py <素材目录>  # 换一套图
+```
+
+回滚：重跑 `apply-avatar.py` 即可恢复原来的 logo / favicon / 头像；看板背景与自定义 CSS 可从 `D:\ubuntu_\.cache\exports\homarr\` 的数据库备份找回。
+
 ## 图片要求
 
 - 常见格式（JPEG / PNG / WebP）；有透明通道会保留。

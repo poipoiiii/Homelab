@@ -1,0 +1,343 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#14070f">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<link rel="manifest" href="board.json?v=2">
+<link rel="icon" href="favicon-32.png">
+<title>poi's home</title>
+<style>
+  html, body {
+    margin: 0;
+    height: 100%;
+    background: #0b0509;
+    overflow: hidden;
+    overscroll-behavior: none;
+  }
+
+  iframe {
+    position: fixed;
+    inset: 0;
+    display: block;
+    width: 100%;
+    height: 100%;
+    border: 0;
+    background: #0b0509;
+  }
+
+  /* 启动封面：先出静态图（60 KB 级），看板就绪后淡出，露出动态背景 */
+  #poster {
+    position: fixed;
+    inset: 0;
+    z-index: 9;
+    background: #0b0509 url('poster-land.jpg') center / cover no-repeat;
+    opacity: 1;
+    transition: opacity 600ms ease;
+    pointer-events: none;
+  }
+
+  #poster.gone {
+    opacity: 0;
+  }
+
+  @media (orientation: portrait) {
+    #poster {
+      background-image: url('poster-port.jpg');
+    }
+  }
+
+  /* ---- 底部气泡栏：只在首页 + 手机宽度出现，整条用一个外框包住 ---- */
+  #dock {
+    display: none;
+  }
+
+  @media (max-width: 768px) {
+    #dock {
+      position: fixed;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      z-index: 8;
+      display: flex;
+      justify-content: center;
+      padding: 0 10px calc(10px + env(safe-area-inset-bottom));
+      pointer-events: none;
+    }
+
+    /* 进入二级页面时整条收起 */
+    #dock.off {
+      display: none;
+    }
+
+    #dock .dock-inner {
+      display: flex;
+      align-items: flex-start;
+      gap: 10px;
+      max-width: 100%;
+      padding: 8px 10px;
+      border-radius: 24px;
+      background: linear-gradient(150deg, rgba(38, 14, 28, 0.62) 0%, rgba(20, 7, 16, 0.58) 100%);
+      border: 1px solid rgba(255, 220, 232, 0.22);
+      box-shadow:
+        0 12px 30px rgba(8, 2, 7, 0.45),
+        inset 0 1px 0 rgba(255, 255, 255, 0.16);
+      backdrop-filter: blur(14px) saturate(130%);
+      -webkit-backdrop-filter: blur(14px) saturate(130%);
+      overflow-x: auto;
+      overflow-y: hidden;
+      scrollbar-width: none;
+      -webkit-overflow-scrolling: touch;
+      pointer-events: auto;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    #dock .dock-inner::-webkit-scrollbar {
+      display: none;
+    }
+
+    #dock a {
+      flex: 0 0 auto;
+      width: 52px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 5px;
+      text-decoration: none;
+    }
+
+    /* 气泡本身不再单独做模糊，只有外框一层，避免手机上叠 9 层 backdrop-filter */
+    #dock .bubble {
+      position: relative;
+      width: 52px;
+      height: 52px;
+      border-radius: 16px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      overflow: hidden;
+      background: rgba(255, 245, 250, 0.1);
+      border: 1px solid rgba(255, 220, 232, 0.14);
+      transition: transform 0.16s ease, background 0.16s ease;
+    }
+
+    #dock a:active .bubble {
+      transform: scale(0.92);
+      background: rgba(255, 245, 250, 0.18);
+    }
+
+    #dock img {
+      width: 30px;
+      height: 30px;
+      object-fit: contain;
+      display: block;
+    }
+
+    #dock .label {
+      font: 10px/1.2 "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
+      color: #ffe9f3;
+      text-shadow: 0 1px 2px rgba(20, 4, 12, 0.8);
+      max-width: 52px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    /* 应用在线状态点，颜色由看板卡片同步过来 */
+    #dock .dot {
+      display: none;
+      position: absolute;
+      right: 4px;
+      bottom: 4px;
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      box-shadow: 0 0 0 1.5px rgba(18, 7, 16, 0.85);
+    }
+
+    #dock .dot.on {
+      display: block;
+    }
+  }
+</style>
+</head>
+<body>
+  <iframe id="app" name="app" src="/" title="看板" allow="fullscreen; clipboard-read; clipboard-write"></iframe>
+  <div id="poster"></div>
+  <nav id="dock" aria-label="应用"><div class="dock-inner"></div></nav>
+  <script>
+    var frame = document.getElementById('app');
+    var poster = document.getElementById('poster');
+    var dock = document.getElementById('dock');
+    var dockInner = dock.querySelector('.dock-inner');
+    var revealed = false;
+    var statusTimer = null;
+
+    // 从看板 DOM 里抓 app 卡片，生成底部气泡栏
+    function buildDock() {
+      var doc;
+      try {
+        doc = frame.contentDocument;
+      } catch (e) {
+        return false;
+      }
+      if (!doc || dockInner.childElementCount) return false;
+
+      var home = document.createElement('a');
+      home.href = '#';
+      home.innerHTML = '<span class="bubble"><img src="logo192.png" alt=""></span><span class="label">看板</span>';
+      home.addEventListener('click', function (e) {
+        e.preventDefault();
+        frame.src = '/';
+      });
+      dockInner.appendChild(home);
+
+      var cards = doc.querySelectorAll('[data-kind="app"]');
+      for (var i = 0; i < cards.length; i++) {
+        var img = cards[i].querySelector('img');
+        var link = cards[i].querySelector('a');
+        if (!img || !link) continue;
+        var name = img.getAttribute('alt') || '';
+        if (!name || name === '应用') continue;
+
+        // 应用一律在新标签页打开：LibreChat 等会发 X-Frame-Options，
+        // 塞进 iframe 会被浏览器直接拦掉，表现为“点了没反应”
+        var item = document.createElement('a');
+        item.href = link.href;
+        item.target = '_blank';
+        item.rel = 'noopener';
+        item.dataset.idx = i;
+        item.innerHTML =
+          '<span class="bubble"><img alt=""><span class="dot"></span></span><span class="label"></span>';
+        item.querySelector('img').src = img.getAttribute('src');
+        item.querySelector('img').alt = name;
+        item.querySelector('.label').textContent = name;
+        dockInner.appendChild(item);
+      }
+
+      try {
+        doc.documentElement.classList.add('has-dock');
+      } catch (e) {}
+      syncStatus();
+      syncDock();
+      if (!statusTimer) statusTimer = setInterval(syncStatus, 4000);
+      return dockInner.childElementCount > 1;
+    }
+
+    // 把原卡片右下角的状态点颜色同步到气泡上
+    function syncStatus() {
+      var doc;
+      try {
+        doc = frame.contentDocument;
+      } catch (e) {
+        return;
+      }
+      if (!doc) return;
+      var cards = doc.querySelectorAll('[data-kind="app"]');
+      for (var n = 0; n < dockInner.children.length; n++) {
+        var item = dockInner.children[n];
+        var dot = item.querySelector('.dot');
+        if (!dot || item.dataset.idx === undefined) continue;
+        var card = cards[Number(item.dataset.idx)];
+        if (!card) continue;
+        var src = card.querySelector('div[style*="border-radius: 100%"]');
+        if (!src) {
+          dot.classList.remove('on');
+          continue;
+        }
+        var color = frame.contentWindow.getComputedStyle(src).backgroundColor;
+        if (!color || color === 'transparent' || color === 'rgba(0, 0, 0, 0)') {
+          dot.classList.remove('on');
+          continue;
+        }
+        dot.style.background = color;
+        dot.classList.add('on');
+      }
+    }
+
+    // 只在首页显示气泡栏；进了 Homarr 的二级页面（设置、编辑等）就收起
+    function isHomePath(path) {
+      if (path === '/' || path === '/boards') return true;
+      return /^\/boards\/[^/]+\/?$/.test(path);
+    }
+
+    function syncDock() {
+      var path = '';
+      try {
+        path = frame.contentWindow.location.pathname;
+      } catch (e) {
+        path = '';
+      }
+      var home = isHomePath(path);
+      dock.classList.toggle('off', !home);
+      // 回首页时确保卡片仍然给气泡栏让位（不主动移除，避免卡片闪一下）
+      if (home) {
+        try {
+          var doc = frame.contentDocument;
+          if (doc) doc.documentElement.classList.add('has-dock');
+        } catch (e) {}
+      }
+    }
+
+    function reveal() {
+      if (revealed) return;
+      revealed = true;
+      // 再兜一次：个别情况 load 已触发但卡片还没渲染完
+      if (!buildDock()) setTimeout(buildDock, 600);
+
+      // 先让 iframe 里的卡片回到透明（此时被封面挡着，看不到），
+      // 等封面淡出后才浮现，形成「静图 → 动态背景 → 组件」的顺序
+      try {
+        var doc = frame.contentDocument;
+        if (doc) {
+          doc.documentElement.classList.add('launch-reveal');
+          // 动画结束后摘掉这个类；万一动画被系统节流没跑，也能兜底显示
+          setTimeout(function () {
+            try { doc.documentElement.classList.remove('launch-reveal'); } catch (e) {}
+          }, 1600);
+        }
+      } catch (e) {}
+
+      poster.classList.add('gone');
+      setTimeout(function () {
+        if (poster.parentNode) poster.parentNode.removeChild(poster);
+      }, 900);
+    }
+
+    function onLoad() {
+      setTimeout(function () {
+        if (!revealed) {
+          reveal();
+          return;
+        }
+        var doc;
+        try {
+          doc = frame.contentDocument;
+        } catch (e) {
+          syncDock();
+          return;
+        }
+        if (!doc) {
+          syncDock();
+          return;
+        }
+        if (!dockInner.childElementCount) buildDock();
+        syncDock();
+      }, 120);
+    }
+
+    frame.addEventListener('load', onLoad);
+    setInterval(syncDock, 1000);
+    // 兜底：看板迟迟加载不完也不要一直卡在封面
+    setTimeout(reveal, 8000);
+
+    // Service Worker 只为了满足 Chrome 的「可安装」判定
+    if (navigator.serviceWorker) {
+      navigator.serviceWorker.register('sw.js', { scope: './' }).catch(function () {});
+    }
+  </script>
+</body>
+</html>

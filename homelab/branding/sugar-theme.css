@@ -1,0 +1,206 @@
+/* ============================================================
+   砂糖 · 暗夜樱糖 —— Homarr 看板自定义 CSS
+   背景：/branding/sugar/bg-anim.gif（横屏） /
+        /branding/sugar/bg-anim-portrait.gif（竖屏）
+   卡片：低透明度糖霜玻璃，背景透得出来，文字转浅粉白
+   ============================================================ */
+
+/* 看板四周轻微压暗，让卡片有落点但不遮背景 */
+.board-wrapper,
+.board {
+  box-shadow: inset 0 0 180px 20px rgba(10, 3, 10, 0.28);
+}
+
+/* ---- 卡片本体：薄糖霜 + 低模糊 ---- */
+.board-grid-item-content {
+  background: linear-gradient(
+    150deg,
+    rgba(255, 241, 247, 0.22) 0%,
+    rgba(255, 214, 230, 0.10) 100%
+  ) !important;
+  border: 1px solid rgba(255, 220, 232, 0.26) !important;
+  border-radius: 18px !important;
+  backdrop-filter: blur(4px) saturate(130%);
+  -webkit-backdrop-filter: blur(4px) saturate(130%);
+  box-shadow:
+    0 10px 26px rgba(26, 6, 16, 0.28),
+    inset 0 1px 0 rgba(255, 255, 255, 0.28);
+  transition:
+    transform 0.18s ease,
+    box-shadow 0.18s ease,
+    border-color 0.18s ease,
+    background 0.18s ease;
+}
+
+.board-grid-item-content:hover {
+  transform: translateY(-2px);
+  background: linear-gradient(
+    150deg,
+    rgba(255, 241, 247, 0.32) 0%,
+    rgba(255, 214, 230, 0.16) 100%
+  ) !important;
+  border-color: rgba(214, 51, 108, 0.62) !important;
+  box-shadow:
+    0 14px 32px rgba(26, 6, 16, 0.40),
+    0 0 0 1px rgba(214, 51, 108, 0.22),
+    0 0 26px rgba(194, 24, 59, 0.28),
+    inset 0 1px 0 rgba(255, 255, 255, 0.34);
+}
+
+/* iframe 组件也套同款外框（Homarr 给它加了重复类名） */
+.board-grid-item-content.iframe-wrapper.iframe-wrapper {
+  background: linear-gradient(
+    150deg,
+    rgba(255, 241, 247, 0.20) 0%,
+    rgba(255, 214, 230, 0.09) 100%
+  ) !important;
+  border: 1px solid rgba(255, 220, 232, 0.24) !important;
+  backdrop-filter: blur(4px) saturate(130%);
+  -webkit-backdrop-filter: blur(4px) saturate(130%);
+  box-shadow:
+    0 10px 26px rgba(26, 6, 16, 0.28),
+    inset 0 1px 0 rgba(255, 255, 255, 0.28);
+}
+
+/* 卡片内文字转为浅粉白，靠轻微阴影保证可读 */
+.board-grid-item-content {
+  color: #fff3f8;
+}
+
+.board-grid-item-content .mantine-Text-root,
+.board-grid-item-content .mantine-Title-root {
+  color: #fff3f8;
+  text-shadow:
+    0 1px 2px rgba(20, 4, 12, 0.85),
+    0 0 10px rgba(20, 4, 12, 0.65);
+}
+
+/* 应用标题：稍粗一点，像糖纸上的印刷字 */
+.board-grid-item-content .mantine-Text-root[class*="app"] {
+  font-weight: 600;
+  letter-spacing: 0.01em;
+}
+
+/* 时钟时间：粉白高光 */
+.board-grid-item-content .mantine-Title-root {
+  text-shadow:
+    0 1px 3px rgba(24, 5, 16, 0.55),
+    0 0 18px rgba(255, 214, 230, 0.35);
+}
+
+/* ---- 启动入场：全屏外壳注入 .launch-reveal 后，卡片延迟浮现 ---- */
+/* 只动 opacity，不碰 transform，避免和 hover 的位移打架 */
+html.launch-reveal .board-grid-item-content {
+  animation: sugar-card-in 480ms cubic-bezier(0.22, 0.61, 0.36, 1) 180ms both;
+}
+
+/* 顶栏比卡片早一点露头，形成「背景 → 顶栏 → 卡片」的层次 */
+html.launch-reveal header[data-app-shell-header] {
+  animation: sugar-card-in 360ms ease 100ms both;
+}
+
+@keyframes sugar-card-in {
+  from {
+    opacity: 0;
+  }
+
+  to {
+    opacity: 1;
+  }
+}
+
+/* 系统开了「减少动态效果」就不做入场，直接显示 */
+@media (prefers-reduced-motion: reduce) {
+  html.launch-reveal .board-grid-item-content,
+  html.launch-reveal header[data-app-shell-header] {
+    animation: none;
+  }
+}
+
+/* ---- 顶栏：默认白条改成暗夜糖霜玻璃，与卡片同一套语言 ---- */
+header[data-app-shell-header] {
+  background: linear-gradient(
+    180deg,
+    rgba(34, 12, 26, 0.74) 0%,
+    rgba(18, 7, 16, 0.66) 100%
+  ) !important;
+  backdrop-filter: blur(12px) saturate(135%);
+  -webkit-backdrop-filter: blur(12px) saturate(135%);
+  border-bottom: 1px solid rgba(255, 214, 230, 0.16) !important;
+  box-shadow: 0 10px 28px rgba(9, 3, 8, 0.38);
+  color: #fff3f8 !important;
+}
+
+/* 标题转浅粉白 */
+header[data-app-shell-header] .mantine-Title-root,
+header[data-app-shell-header] .mantine-Text-root {
+  color: #fff3f8 !important;
+  text-shadow: 0 1px 2px rgba(18, 4, 12, 0.65);
+}
+
+/* 右侧图标：默认灰，换成浅粉，hover 带一层糖霜 */
+header[data-app-shell-header] .mantine-ActionIcon-root {
+  color: #ffdcea !important;
+}
+
+header[data-app-shell-header] .mantine-ActionIcon-root:hover {
+  background: rgba(255, 214, 230, 0.14) !important;
+  color: #fff3f8 !important;
+}
+
+/* 桌面端搜索入口：半透明暗玻璃 */
+header[data-app-shell-header] [class*="desktopSearch"] .mantine-Input-input {
+  background: rgba(255, 245, 250, 0.08) !important;
+  border: 1px solid rgba(255, 214, 230, 0.18) !important;
+  color: rgba(255, 243, 248, 0.72) !important;
+}
+
+header[data-app-shell-header] [class*="desktopSearch"] .mantine-Input-input:hover {
+  background: rgba(255, 245, 250, 0.12) !important;
+  border-color: rgba(214, 51, 108, 0.5) !important;
+}
+
+/* 看板 logo：一圈糖霜描边，压住深色底 */
+header[data-app-shell-header] img.logo {
+  box-shadow:
+    0 0 0 1px rgba(255, 214, 230, 0.22),
+    0 4px 12px rgba(8, 2, 7, 0.4);
+}
+
+/* ---- 手机竖屏：换成竖构图动态背景，卡片更轻 ---- */
+@media (orientation: portrait) and (max-width: 768px) {
+  .mantine-AppShell-root {
+    background-image: url('/branding/sugar/bg-anim-portrait.gif') !important;
+    background-position: 50% 32% !important;
+    background-size: cover !important;
+  }
+
+  /* 全屏外壳接管应用入口：底部气泡栏出现时，看板里的 app 卡片让位 */
+  html.has-dock [data-kind="app"] {
+    display: none !important;
+  }
+
+  /* 给底部气泡栏留出空间，避免最后一行被压住 */
+  html.has-dock .mantine-AppShell-main {
+    padding-bottom: calc(96px + env(safe-area-inset-bottom)) !important;
+  }
+
+  .board-grid-item-content {
+    border-radius: 14px !important;
+    background: linear-gradient(
+      150deg,
+      rgba(40, 14, 27, 0.62) 0%,
+      rgba(22, 8, 17, 0.56) 100%
+    ) !important;
+    border: 1px solid rgba(255, 220, 232, 0.24) !important;
+    backdrop-filter: blur(3px) saturate(125%);
+    -webkit-backdrop-filter: blur(3px) saturate(125%);
+  }
+
+  .board-grid-item-content .mantine-Text-root,
+  .board-grid-item-content .mantine-Title-root {
+    text-shadow:
+      0 1px 2px rgba(20, 4, 12, 0.7),
+      0 0 6px rgba(20, 4, 12, 0.45);
+  }
+}
