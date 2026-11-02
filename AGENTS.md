@@ -43,6 +43,7 @@ d:\ubuntu_\                          Windows 侧工作目录（本仓库）
 │  │  ├─ docker-compose.yml
 │  │  ├─ Dockerfile
 │  │  ├─ app\                        FastAPI + 静态页面
+│  │  ├─ android\                    手机短信/通知采集 App（Kotlin，产物在 .cache）
 │  │  └─ DESIGN.md                   页面设计系统（不参与运行）
 │  ├─ backup\                        统一备份脚本 + systemd timer（bill-ai，可扩展）
 │  └─ palworld\docker-compose.yml    Palworld 服务器（端口 8211）
@@ -158,8 +159,9 @@ wsl.exe --version
 - `traccar` 的 Web 端口是 **8085**（8082 留给 Vaultwarden，两者不能共用）；5055 是手机端上报端口。
 - 新增的管理类服务只绑定 `127.0.0.1`，**不要加进 frp**；需要远程访问时走 SSH 隧道，或另行评估隧道方案。
 - MCSManager（`mcsm-daemon` / `mcsm-web`）和 `1panel` 是 **WSL 宿主机的 systemd 服务，不是容器**，Docker 面板看不到。电源面板通过宿主机的 `power-host-agent.service`（监听 `172.17.0.1:8093`，白名单仅这三个 unit 的 start/stop）管理它们；源码在 `homelab/power/host-agent/`，安装到 `/opt/power-host-agent`。
+- **AI 修图网关**（`img-edit-gateway.service`，监听 `0.0.0.0:8094`；8090 留给 Beszel）也是 **WSL 宿主机 systemd 服务**：代码从本仓库 `homelab_android/server/image-edit/gateway` 同步到 `/home/ubuntu/img-edit/gateway`，配置 `/home/ubuntu/img-edit/.env`（600，含 `IMAGE_EDIT_TOKEN`），数据在 `/home/ubuntu/img-edit/data`。推理复用已在跑的 ComfyUI（`127.0.0.1:8188`）和 GGUF 模型，详见 `homelab_android/docs/image-edit-design.md`；GPU 需要 ROCm 7 + `LD_PRELOAD=/opt/rocm-7.2.0/lib/libhsa-runtime64.so.1`，只对部署脚本有意义，网关本身不碰 torch。
 - **Minecraft 有两个实例，别改错**：`homelab/mc` 的容器 `mc`（当前 `TYPE=FORGE`、`VERSION=1.20.1`、`FORGE_VERSION=47.3.33`、`MEMORY=8G`、`ONLINE_MODE=true`，数据在命名卷 `mc_data`）；另一台是由 MCSManager 托管的 `mc-rt2home`，`homelab/mc-backup` 每天 06:00 备份的是它（实例目录在 `/opt/mcsmanager/daemon/data/InstanceData/`）。改版本/内存前先确认在用的是哪一台。
-- **Rong的账单**：`/` 记一笔、`/dashboard` 总览、`/transactions` 流水、`/settings` 账户与分类；数据全在 SQLite。`/transactions` 右上角可导出 CSV，`/api/backup.db` 提供 SQLite 在线快照；`homelab/backup/` 的 `backup.sh` + timer 每天 06:30 拉取到 `D:\ubuntu_\.cache\backup\bill-ai\`（保留 14 天）。安装：
+- **Rong的账单**：`/` 记一笔、`/dashboard` 总览、`/transactions` 流水、`/inbox` 待入账、`/settings` 账户与分类；数据全在 SQLite。手机 App 通过 `POST /api/ingest`（请求头 `X-Ingest-Token`，对应 `.env` 的 `INGEST_TOKEN`）上报短信/通知原文，落 `inbox` 表，网页确认后才写入流水。`/transactions` 右上角可导出 CSV，`/api/backup.db` 提供 SQLite 在线快照；`homelab/backup/` 的 `backup.sh` + timer 每天 06:30 拉取到 `D:\ubuntu_\.cache\backup\bill-ai\`（保留 14 天）。安装：
 
   ```bash
   sudo install -m755 ~/homelab/backup/backup.sh /usr/local/bin/homelab-backup.sh
@@ -167,6 +169,8 @@ wsl.exe --version
   sudo systemctl daemon-reload && sudo systemctl enable --now homelab-backup.timer
   ```
 - **lab-tools 下载通知**：`download_media` 提交后会轮询 MeTube `/history`，任务完成/失败时推送企业微信消息。首选自建应用：在 `homelab/lab-tools/.env` 里填 `WECOM_CORP_ID`、`WECOM_SECRET`、`WECOM_AGENT_ID`（接收人 `WECOM_TOUSER`，默认 `@all`）后 `docker compose up -d` 生效；旧的群机器人 `WECOM_WEBHOOK` 仍兼容，两者都配时优先自建应用，都未配置时只写日志。企业微信后台「接收消息」的 Token / EncodingAESKey / 回调 URL 只用于回调校验，发消息不需要。
+
+  账户余额新鲜度（`balance_updated_at` / `balance_source`）与短信/通知余额候选（`GET /api/balances/candidates`、`confirm`、`reject`）见 `homelab/bill-ai/API.md`；候选确认后才回写账户余额，客户端在账单页「余额待确认」卡片核对。
 
 ## 5. 存储位置与 C 盘禁令
 

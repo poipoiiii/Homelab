@@ -15,18 +15,19 @@
 - **不是一键部署模板**：仓库是从一台长期运行的机器上抽出来的配置与服务源码，WSL 发行版、虚拟磁盘、媒体文件、凭据都不入库。
 - **AI 是操作层，不是聊天玩具**：模型只能调用白名单工具，写操作要二次确认，所有动作落审计日志。
 - **数据都在 D 盘**：WSL 的 `ext4.vhdx`、容器卷、媒体库、备份全部避开系统盘。
-- **默认只监听回环**：除 Dockge（需要经 frp 远程打开）外，管理类服务全部绑定 `127.0.0.1`，远程访问走隧道。
+- **默认只监听回环**：除 Dockge（需要经 frp 远程打开）和 AI 修图网关（手机要直连，走 Bearer Token）外，管理类服务全部绑定 `127.0.0.1`，远程访问走隧道。
 
 ## 项目组成
 
 | 模块 | 位置 | 说明 |
 | --- | --- | --- |
-| AI 工具服务 | [homelab/lab-tools](homelab/lab-tools) | MCP over HTTP，13 个工具：容器查询/启停、健康快照、磁盘占用、片源搜索、下载、账单查询 |
+| AI 工具服务 | [homelab/lab-tools](homelab/lab-tools) | MCP over HTTP，15 个工具：容器查询/启停、健康快照、磁盘占用、片源搜索、下载队列、账单查询；另带 `/status` 只读状态页 |
 | 聊天前端 | [homelab/librechat](homelab/librechat) | LibreChat + DeepSeek，通过 `librechat.yaml` 挂载 `lab-tools` |
 | 下载执行器 | [homelab/metube](homelab/metube) | MeTube / yt-dlp，接收 URL 并按目标目录落盘 |
 | 媒体库 | [homelab/jellyfin](homelab/jellyfin) | 只读挂载 D 盘各媒体目录，番剧按剧集结构识别 |
 | 电源面板 | [homelab/power](homelab/power) | 按组一键 stop/start，临时释放内存；宿主机 systemd 服务也能管 |
-| 记账 | [homelab/bill-ai](homelab/bill-ai) | 「Rong的账单」：截图/CSV/XLSX 账单识别 + 本地账本（SQLite） |
+| 记账 | [homelab/bill-ai](homelab/bill-ai) | 「Rong的账单」：截图/CSV/XLSX 账单识别 + 本地账本（SQLite）；配套 [Android 采集 App](homelab/bill-ai/android) 把银行短信和支付通知写进待入账队列 |
+| AI 修图 | [homelab_android/server/image-edit](homelab_android/server/image-edit) | Qwen-Image-Edit-2511 网关（FastAPI + SQLite job 队列），推理复用本机 ComfyUI 的 GGUF 量化模型；配套 Android App 的独立修图页与 4 个 Agent 工具 |
 | 统一图标 | [homelab/branding](homelab/branding) | 一条命令生成全站 favicon / logo / 头像 |
 | 备份 | [homelab/backup](homelab/backup)、[homelab/mc-backup](homelab/mc-backup) | 账单每日快照、Minecraft 世界每日归档 |
 | 宿主机服务 | [homelab/mcsmanager](homelab/mcsmanager)、[homelab/power/host-agent](homelab/power/host-agent) | MCSManager / 1Panel 的 systemd 单元与受控代理 |
@@ -80,9 +81,13 @@ Docker 访问被拆成两个 socket proxy：读代理能查容器但不能写，
 | `disk_usage` | 只读 | 镜像/容器/卷/构建缓存的总量与可回收量 |
 | `search_bilibili` / `search_youtube` | 只读 | 按片名搜索，返回可下载链接 |
 | `recent_expenses` / `largest_expenses` | 只读 | 查最近流水、指定周期内最大支出 |
-| `download_media` | 写 | 提交下载任务 |
+| `download_media` | 写 | 提交下载任务（带磁盘余量预检和同链接去重） |
+| `list_downloads` | 只读 | 下载队列、最近完成与失败原因 |
+| `cancel_download` | 写 | 取消排队/下载中的任务（不删已落盘文件） |
 | `start_service` | 写 | 启动已停止的容器 |
 | `stop_service` / `restart_service` | 写 + 确认 | 首次调用只返回 `confirm_token`，确认后才执行 |
+
+`lab-tools` 还提供只读状态页 `http://127.0.0.1:8765/status`（JSON 为 `/status.json`），把容器异常、媒体盘余量、下载队列和最近备份汇总成一张卡，可直接作为 Homarr 的 iframe 组件。手机访问时 `127.0.0.1` 指向手机自身，需要另走 tailnet serve 或反向代理。
 
 ### 为什么下载不用 Pinchflat
 
@@ -98,7 +103,7 @@ Pinchflat 的模型是「订阅源 + 定时检查」，适合 YouTube 频道归�
 4. **路径白名单**：下载目标只认四个枚举值，映射关系固定。
 5. **审计**：每次启停追加一行 JSON 到 `lab_tools_audit` 卷（时间、动作、目标、结果、token）。
 6. **宿主机操作白名单**：`power/host-agent` 只允许 `mcsm-daemon.service`、`mcsm-web.service`、`1panel.service` 的 start/stop，不接任意命令。
-7. **默认回环**：除 Dockge 外所有 Web 服务绑定 `127.0.0.1`；Dockge 挂着 `docker.sock`、等价宿主机 root，必须自行加认证或走隧道，不能无鉴权暴露到公网。
+7. **默认回环**：除 Dockge 和 AI 修图网关外所有 Web 服务绑定 `127.0.0.1`；Dockge 挂着 `docker.sock`、等价宿主机 root，必须自行加认证或走隧道，不能无鉴权暴露到公网；修图网关无公网端口映射，仅 tailnet 内可达，且每个请求都校验 Bearer Token。
 
 ## 服务清单
 
@@ -109,7 +114,7 @@ Pinchflat 的模型是「订阅源 + 定时检查」，适合 YouTube 频道归�
 | Dozzle | 容器日志面板 | `8888` |
 | Beszel | 资源监控 | `8090` |
 | LibreChat | AI 聊天入口 | `3080` |
-| lab-tools | MCP 工具服务 | `8765` |
+| lab-tools | MCP 工具服务 + `/status` 状态页 | `8765` |
 | MeTube | 一次性视频下载 | `8081` |
 | Pinchflat | YouTube 订阅归档 | `8945` |
 | Jellyfin | 影视库 | `8096` |
@@ -117,12 +122,13 @@ Pinchflat 的模型是「订阅源 + 定时检查」，适合 YouTube 频道归�
 | Vaultwarden | 密码管理 | `8082` |
 | Traccar | 位置追踪（上报端口 5055） | `8085` |
 | Rong的账单 | 记账 + 账单识别 | `8091` |
+| AI 修图网关 | Qwen-Image-Edit 异步任务（宿主机 systemd） | `8094` |
 | 电源面板 | 按组启停容器 / 宿主机服务 | `8092` |
 | Minecraft | Forge 1.20.1 服务器 | `25565` |
 | Palworld | 幻兽帕鲁服务器 | `8211` |
 | frpc | 内网穿透客户端 | host 网络 |
 
-宿主机另有 MCSManager（`23333`）和 1Panel（`25081`），由 systemd 管理，不在容器列表里。端口表由 `tools/gen-port-table.ps1` 扫描 compose 生成，是 `AGENTS.md` 表格的唯一来源。
+宿主机另有 MCSManager（`23333`）、1Panel（`25081`）和 AI 修图网关（`8094`，systemd 管理，不在容器列表里）。修图网关依赖已在本机运行的 ComfyUI（`127.0.0.1:8188`），模型是 GGUF 量化版，不占 docker 资源。端口表由 `tools/gen-port-table.ps1` 扫描 compose 生成，是 `AGENTS.md` 表格的唯一来源。
 
 ## 快速开始
 
@@ -147,7 +153,7 @@ Pinchflat 的模型是「订阅源 + 定时检查」，适合 YouTube 频道归�
    ```bash
    cp homelab/librechat/.env.example homelab/librechat/.env   # 填 DEEPSEEK_API_KEY、CREDS_KEY、JWT_SECRET 等
    cp homelab/lab-tools/.env.example homelab/lab-tools/.env   # 企业微信通知可选
-   # homelab/bill-ai/.env 需要 DEEPSEEK_API_KEY
+   # homelab/bill-ai/.env 需要 DEEPSEEK_API_KEY，以及手机上报用的 INGEST_TOKEN（随机长串）
    # homelab/metube/cookies.txt 放 B 站登录态（Netscape 格式，权限 600）
    ```
 
@@ -184,6 +190,7 @@ Pinchflat 的模型是「订阅源 + 定时检查」，适合 YouTube 频道归�
 │  ├─ startup-panel/      Windows 开机自启管理面板
 │  └─ gen-port-table.ps1  由 compose 生成端口表
 ├─ docs/                  README 截图
+├─ homelab_android/       Android 客户端（含 server/image-edit 修图网关）
 ├─ AGENTS.md              给 AI 编码代理的项目约束与踩坑记录
 └─ .gitignore             排除虚拟磁盘、媒体、凭据、缓存
 ```
@@ -193,6 +200,24 @@ Pinchflat 的模型是「订阅源 + 定时检查」，适合 YouTube 频道归�
 - **账单**：`backup.sh` 每天从 `/api/backup.db` 拉 SQLite 在线快照和 CSV，写到 `D:\ubuntu_\.cache\backup\bill-ai\`，保留 14 天。
 - **Minecraft**：`mc-backup.sh` 先 `docker pause` 保证世界文件一致，再打包实例目录，本地和 D 盘各留 7 天。
 - 两个任务都由 systemd timer 触发，脚本在仓库内，安装步骤见 `AGENTS.md`。
+
+## 手机账单采集
+
+银行动账短信、支付宝/微信的支付通知由手机 App 采集，原文上报到 `bill-ai`，解析后进入「待入账」队列，确认才写进流水。
+
+- **服务端**：`.env` 里加 `INGEST_TOKEN=<随机长串>`；`/api/ingest` 只认这个请求头，未配置时接口直接返回 503。手机走 Tailscale 内网入口访问，不开公网。
+- **App**：源码在 `homelab/bill-ai/android`，产物 `bill-capture-debug.apk`。安装后在应用里填服务器地址（tailnet 地址）和同一个 token，点「保存并测试连接」。
+- **权限**：短信权限（弹窗授权）、通知使用权（系统设置里手动开）、HyperOS 还需「自启动 + 省电策略无限制 + 最近任务锁定」，否则后台被杀会漏单。
+- **流程**：手机只做关键词预过滤 → `POST /api/ingest` → 服务端正则规则 → 未命中交给 DeepSeek → 落 `inbox` 表 → 网页 `/inbox` 逐条确认。同一分钟相同原文只留一条，发送失败的原文在手机上排队，每 30 分钟补发一次。
+
+## 手机 AI 修图
+
+Android App 的「AI 修图」页和对话里的 `edit_photo` 工具，会把照片和一句中文指令发给家里的 `img-edit-gateway:8094`，网关排队调用本机 ComfyUI（GGUF 量化的 Qwen-Image-Edit-2511）出图，结果再下载回手机相册；图片不经过 DeepSeek/OpenAI。
+
+- **手机端文档**（入口、配置、三种模式、对话工具、构建与排查）：[homelab_android/docs/image-edit-android.md](homelab_android/docs/image-edit-android.md)
+- **服务端文档**（部署、模型文件、API、运维与调参）：[homelab_android/server/image-edit/README.md](homelab_android/server/image-edit/README.md)
+- **设计与实测数据**：[homelab_android/docs/image-edit-design.md](homelab_android/docs/image-edit-design.md)
+- **实测**：1088×1088、30 步、CFG 1.0 约 4 分钟/张，峰值显存约 22GB；批量 8 张约 30 分钟。调用链为 App → 网关 `8094` → ComfyUI `127.0.0.1:8188`。
 
 ## 存储约定
 
@@ -205,12 +230,18 @@ Pinchflat 的模型是「订阅源 + 定时检查」，适合 YouTube 频道归�
 - **YouTube 需要代理**：当前容器网络访问不了 YouTube，`search_youtube` 会明确返回不可达；抖音只支持贴链接，网页搜索接口需要签名。
 - **B 站高码率/大会员内容需要 cookies**：MeTube 和搜索共用同一份 `cookies.txt`，失效后 412 风控会变多。
 - **MeTube 单并发**：`MAX_CONCURRENT_DOWNLOADS=1`，避免同时下载把 9P 挂载打满。
+- **手机采集不是全量**：短信只能覆盖银行动账提醒（部分银行默认关闭小额提醒），支付宝/微信消费依赖通知内容；通知被系统折叠、设为「隐藏内容」或 App 被清理时会漏，仍需每月用 CSV 账单对账。
 - **仓库不含安装器**：WSL 导入、Docker 安装、宿主机 systemd 单元需要按上面的步骤手动完成；`AGENTS.md` 记录了完整命令和坑。
 - **Minecraft 有两套实例**：`homelab/mc` 是容器，另一套由 MCSManager 托管，`mc-backup` 备份的是后者，改配置前先确认对象。
+- **AI 修图是单并发、按张收费（时间）**：单张约 4 分钟，批量 8 张约 30 分钟；24GB 显存放不下 bf16 全量权重，只能用 GGUF 量化 + 现成的 ComfyUI，质量与速度都比 bf16 略低。
 
 ## 更多文档
 
 - [AGENTS.md](AGENTS.md)：项目约束、C 盘禁令、排错速查、运维命令
+- [homelab_android/README.md](homelab_android/README.md)：Android 客户端构建与首次配置
+- [homelab_android/docs/image-edit-android.md](homelab_android/docs/image-edit-android.md)：AI 修图手机端（入口、配置、模式、对话工具、构建排错）
+- [homelab_android/server/image-edit/README.md](homelab_android/server/image-edit/README.md)：AI 修图服务端（部署、模型、API、运维调参）
+- [homelab_android/docs/image-edit-design.md](homelab_android/docs/image-edit-design.md)：修图服务的接口、状态机与本机实测数据
 - [lab-tools/AGENT-REQUIREMENTS.md](homelab/lab-tools/AGENT-REQUIREMENTS.md)：能力清单、权限拆分、验收标准
 - [branding/README.md](homelab/branding/README.md)：一键换全站图标
 
