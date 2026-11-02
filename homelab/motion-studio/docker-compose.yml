@@ -1,0 +1,49 @@
+# 本地数据播报视频渲染服务：canvas 逐帧 + ffmpeg 编码
+# 访问：本机 127.0.0.1:8095；手机通过 tailnet 或 SSH 隧道访问
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
+services:
+  motion-studio:
+    build: .
+    container_name: motion-studio
+    logging: *default-logging
+    labels:
+      dev.dozzle.group: "家庭服务"
+    restart: unless-stopped
+    environment:
+      - TZ=Asia/Shanghai
+      - PORT=8095
+      - DATA_DIR=/data
+      # 渲染并发固定 1：单帧是 CPU 密集的 canvas 绘制，多开会拖慢其他容器
+      - RENDER_CONCURRENCY=1
+      # 任务保留天数与上限
+      - KEEP_DAYS=14
+      - MAX_JOBS=200
+      - MAX_QUEUE=8
+      # 空 = 不鉴权（仅建议本机使用）；填了就要求 Authorization: Bearer <token>
+      - MOTION_TOKEN=${MOTION_TOKEN:-}
+    ports:
+      # 对 tailnet 暴露给手机；务必在 .env 里设置 MOTION_TOKEN
+      - "8095:8095"
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://127.0.0.1:8095/healthz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))",
+        ]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+    volumes:
+      # 成片与任务 JSON 放在 ext4 命名卷里，不落到 /mnt/d（9P 慢且权限不稳定）
+      - motion_studio_data:/data
+
+volumes:
+  motion_studio_data:
