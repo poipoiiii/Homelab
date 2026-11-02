@@ -18,6 +18,7 @@ services:
     environment:
       - TZ=Asia/Shanghai
       - DB_PATH=/data/bill.db
+      # 手机上报凭证由 .env 的 INGEST_TOKEN 注入；未配置时 /api/ingest 返回 503
     ports:
       - "127.0.0.1:8091:8091"
     healthcheck:

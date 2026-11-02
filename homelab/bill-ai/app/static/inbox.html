@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="color-scheme" content="light">
+  <title>待入账 · Rong的账单</title>
+  <link rel="icon" href="/branding/favicon.ico" sizes="any">
+  <link rel="icon" type="image/png" href="/branding/favicon-32.png" sizes="32x32">
+  <link rel="apple-touch-icon" href="/branding/apple-touch-icon.png">
+  <link rel="stylesheet" href="/static/style.css?v=20261022f">
+  <link rel="stylesheet" href="/static/dashboard.css?v=20261022f">
+  <link rel="stylesheet" href="/static/inbox.css?v=20261023a">
+</head>
+<body>
+  <div class="page dash inbox-page">
+    <header class="masthead">
+      <a class="brand" href="/" aria-label="Rong的账单 首页">
+        <img class="brand-mark" src="/branding/logo192.png" alt="" aria-hidden="true">
+        <span class="brand-name">Rong的账单</span>
+      </a>
+      <nav class="dash-nav" aria-label="主导航">
+        <a class="ghost-link" href="/">记一笔</a>
+        <a class="ghost-link" href="/dashboard">总览</a>
+        <a class="ghost-link" href="/transactions">流水</a>
+        <a class="ghost-link is-active" href="/inbox" aria-current="page">待入账</a>
+        <a class="ghost-link" href="/settings">设置</a>
+      </nav>
+    </header>
+
+    <main>
+      <section class="inbox-hero">
+        <div>
+          <p class="eyebrow">手机上报</p>
+          <h1 class="inbox-title">待入账</h1>
+          <p class="inbox-sub" id="inboxSub">正在读取…</p>
+        </div>
+        <div class="inbox-actions">
+          <button type="button" class="btn secondary" id="refreshBtn">刷新</button>
+        </div>
+      </section>
+
+      <div class="inbox-tabs" role="tablist" aria-label="状态">
+        <button type="button" class="chip is-on" data-status="pending" role="tab" aria-selected="true">待确认</button>
+        <button type="button" class="chip" data-status="accepted" role="tab" aria-selected="false">已入账</button>
+        <button type="button" class="chip" data-status="rejected" role="tab" aria-selected="false">已忽略</button>
+      </div>
+
+      <div class="inbox-list" id="inboxList"></div>
+
+      <div class="inbox-empty" id="inboxEmpty" hidden>
+        <p class="inbox-empty-title">这里空着</p>
+        <p class="inbox-empty-text">手机上报的银行短信和支付通知会先落在这里，确认后才写进流水。</p>
+      </div>
+    </main>
+
+    <footer class="footer">
+      <span>短信与通知只在本机解析，原始文本留在自己的服务器。</span>
+      <span id="updatedAt"></span>
+    </footer>
+  </div>
+
+  <script src="/static/inbox.js?v=20261023a"></script>
+</body>
+</html>

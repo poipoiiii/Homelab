@@ -5,10 +5,12 @@
 
 from __future__ import annotations
 
+import json
 import os
+import re
 import sqlite3
 import time
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from typing import Any
 
 DB_PATH = os.getenv("DB_PATH", "/data/bill.db")
@@ -38,6 +40,9 @@ def init_db() -> None:
                 opening_date TEXT,
                 sort INTEGER NOT NULL DEFAULT 0,
                 archived INTEGER NOT NULL DEFAULT 0,
+                -- 余额最后一次被确认的时间与来源（sms / notification / manual / ocr）
+                balance_updated_at TEXT,
+                balance_source TEXT,
                 created_at INTEGER NOT NULL
             );
 
@@ -71,8 +76,76 @@ def init_db() -> None:
             CREATE INDEX IF NOT EXISTS idx_tx_date ON transactions(date);
             CREATE INDEX IF NOT EXISTS idx_tx_account ON transactions(account_id);
             CREATE INDEX IF NOT EXISTS idx_tx_category ON transactions(category_id);
+
+            -- 手机上报的短信/通知原文，确认后才写入 transactions
+            CREATE TABLE IF NOT EXISTS inbox (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                source TEXT NOT NULL,
+                sender TEXT NOT NULL DEFAULT '',
+                raw_text TEXT NOT NULL,
+                received_at INTEGER NOT NULL,
+                device TEXT NOT NULL DEFAULT '',
+                status TEXT NOT NULL DEFAULT 'pending',
+                txn_id INTEGER,
+                parsed TEXT NOT NULL DEFAULT '',
+                note TEXT NOT NULL DEFAULT '',
+                fingerprint TEXT NOT NULL UNIQUE,
+                created_at INTEGER NOT NULL
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_inbox_status ON inbox(status, id DESC);
+
+            -- 已写入过的账单指纹，避免同一笔重复入账
+            CREATE TABLE IF NOT EXISTS committed (
+                hash TEXT PRIMARY KEY,
+                group_id TEXT,
+                created_at INTEGER NOT NULL
+            );
+
+            -- 卡号尾号 → 账户的映射，短信只认得出尾号时靠它匹配
+            CREATE TABLE IF NOT EXISTS account_cards (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                account_id INTEGER NOT NULL REFERENCES accounts(id),
+                card_tail TEXT NOT NULL,
+                sender TEXT NOT NULL DEFAULT '',
+                created_at INTEGER NOT NULL
+            );
+
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_card_tail
+                ON account_cards(account_id, card_tail, sender);
+
+            -- 短信/通知/截图识别出的余额候选，人工核对后才回写账户余额
+            CREATE TABLE IF NOT EXISTS account_balance_snapshots (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                account_id INTEGER REFERENCES accounts(id),
+                card_tail TEXT NOT NULL DEFAULT '',
+                balance INTEGER NOT NULL,
+                currency TEXT NOT NULL DEFAULT 'CNY',
+                source TEXT NOT NULL,
+                observed_at TEXT NOT NULL,
+                status TEXT NOT NULL DEFAULT 'pending',
+                raw_text TEXT NOT NULL DEFAULT '',
+                raw_hash TEXT NOT NULL,
+                dedup_key TEXT NOT NULL,
+                sender TEXT NOT NULL DEFAULT '',
+                note TEXT NOT NULL DEFAULT '',
+                created_at INTEGER NOT NULL,
+                decided_at INTEGER
+            );
+
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_balance_raw
+                ON account_balance_snapshots(raw_hash);
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_balance_dedup
+                ON account_balance_snapshots(dedup_key);
+            CREATE INDEX IF NOT EXISTS idx_balance_status
+                ON account_balance_snapshots(status, id DESC);
             """
         )
+        # 老库补齐余额新鲜度字段；SQLite 不支持 ADD COLUMN IF NOT EXISTS
+        existing = {row["name"] for row in con.execute("PRAGMA table_info(accounts)")}
+        for column, ddl in (("balance_updated_at", "TEXT"), ("balance_source", "TEXT")):
+            if column not in existing:
+                con.execute(f"ALTER TABLE accounts ADD COLUMN {column} {ddl}")
         con.commit()
     finally:
         con.close()
@@ -91,6 +164,16 @@ def cents(value: Any) -> int:
 
 def yuan(value: int) -> str:
     return f"{value / 100:.2f}"
+
+
+def _iso(ts: int | None) -> str | None:
+    if not ts:
+        return None
+    return datetime.fromtimestamp(int(ts)).astimezone().isoformat(timespec="seconds")
+
+
+def iso_now() -> str:
+    return _iso(int(time.time())) or ""
 
 
 # ---------------------------------------------------------------- accounts
@@ -120,6 +203,8 @@ def list_accounts(include_archived: bool = False) -> list[dict[str, Any]]:
                 "opening_date": row["opening_date"],
                 "archived": bool(row["archived"]),
                 "balance": yuan(balances.get(row["id"], 0)),
+                "balance_updated_at": row["balance_updated_at"],
+                "balance_source": row["balance_source"],
                 "count": counts.get(row["id"], 0),
             }
             for row in rows
@@ -236,16 +321,23 @@ def account_flow(account_id: int) -> int:
         con.close()
 
 
-def reconcile_account(account_id: int, target_balance: Any) -> str:
-    """按实际余额反推期初，使账户当前余额等于 target。"""
+def reconcile_account(
+    account_id: int,
+    target_balance: Any,
+    *,
+    source: str = "manual",
+    updated_at: str | None = None,
+) -> str:
+    """按实际余额反推期初，使账户当前余额等于 target，并记录新鲜度。"""
     target = cents(target_balance)
     flow = account_flow(account_id)
     opening = target - flow
     con = connect()
     try:
         con.execute(
-            "UPDATE accounts SET opening_balance = ? WHERE id = ?",
-            (opening, account_id),
+            "UPDATE accounts SET opening_balance = ?, balance_updated_at = ?, balance_source = ? "
+            "WHERE id = ?",
+            (opening, updated_at or iso_now(), source, account_id),
         )
         con.commit()
     finally:
@@ -515,6 +607,408 @@ def delete_transaction(txn_id: int) -> None:
         con.close()
 
 
+# ------------------------------------------------------------------ inbox
+
+
+def _inbox_row(row: sqlite3.Row) -> dict[str, Any]:
+    return {
+        "id": row["id"],
+        "source": row["source"],
+        "sender": row["sender"],
+        "raw_text": row["raw_text"],
+        "received_at": row["received_at"],
+        "device": row["device"],
+        "status": row["status"],
+        "txn_id": row["txn_id"],
+        "parsed": json.loads(row["parsed"]) if row["parsed"] else None,
+        "note": row["note"],
+        "fingerprint": row["fingerprint"],
+        "created_at": row["created_at"],
+    }
+
+
+def add_inbox(
+    *,
+    source: str,
+    sender: str,
+    raw_text: str,
+    received_at: int,
+    device: str,
+    fingerprint: str,
+    parsed: dict[str, Any] | None,
+    note: str = "",
+) -> tuple[int, bool]:
+    """写入一条待入账消息，返回 (id, 是否新建)。同一个 fingerprint 只保留一条。"""
+    payload = json.dumps(parsed, ensure_ascii=False) if parsed else ""
+    con = connect()
+    try:
+        cursor = con.execute(
+            "INSERT OR IGNORE INTO inbox "
+            "(source, sender, raw_text, received_at, device, status, parsed, note, fingerprint, created_at) "
+            "VALUES (?, ?, ?, ?, ?, 'pending', ?, ?, ?, ?)",
+            (source, sender, raw_text, received_at, device, payload, note, fingerprint, int(time.time())),
+        )
+        con.commit()
+        if cursor.rowcount:
+            return int(cursor.lastrowid), True
+        row = con.execute("SELECT id FROM inbox WHERE fingerprint = ?", (fingerprint,)).fetchone()
+        return int(row["id"]), False
+    finally:
+        con.close()
+
+
+def list_inbox(status: str = "pending", limit: int = 100, offset: int = 0) -> list[dict[str, Any]]:
+    con = connect()
+    try:
+        if status == "all":
+            rows = con.execute(
+                "SELECT * FROM inbox ORDER BY id DESC LIMIT ? OFFSET ?",
+                (max(1, min(limit, 500)), max(0, offset)),
+            ).fetchall()
+        else:
+            rows = con.execute(
+                "SELECT * FROM inbox WHERE status = ? ORDER BY id DESC LIMIT ? OFFSET ?",
+                (status, max(1, min(limit, 500)), max(0, offset)),
+            ).fetchall()
+        return [_inbox_row(row) for row in rows]
+    finally:
+        con.close()
+
+
+def get_inbox(inbox_id: int) -> dict[str, Any] | None:
+    con = connect()
+    try:
+        row = con.execute("SELECT * FROM inbox WHERE id = ?", (inbox_id,)).fetchone()
+        return _inbox_row(row) if row else None
+    finally:
+        con.close()
+
+
+def update_inbox_parsed(inbox_id: int, parsed: dict[str, Any] | None, note: str | None = None) -> None:
+    con = connect()
+    try:
+        fields, values = ["parsed = ?"], [json.dumps(parsed, ensure_ascii=False) if parsed else ""]
+        if note is not None:
+            fields.append("note = ?")
+            values.append(note)
+        values.append(inbox_id)
+        con.execute(f"UPDATE inbox SET {', '.join(fields)} WHERE id = ?", values)
+        con.commit()
+    finally:
+        con.close()
+
+
+def finish_inbox(inbox_id: int, status: str, txn_id: int | None = None, note: str | None = None) -> None:
+    fields = ["status = ?", "txn_id = ?"]
+    values: list[Any] = [status, txn_id]
+    if note is not None:
+        fields.append("note = ?")
+        values.append(note)
+    values.append(inbox_id)
+    con = connect()
+    try:
+        con.execute(f"UPDATE inbox SET {', '.join(fields)} WHERE id = ?", values)
+        con.commit()
+    finally:
+        con.close()
+
+
+def inbox_pending_count() -> int:
+    con = connect()
+    try:
+        return int(con.execute("SELECT COUNT(*) FROM inbox WHERE status = 'pending'").fetchone()[0])
+    finally:
+        con.close()
+
+
+# ------------------------------------------------------- balance snapshots
+
+RAW_EXCERPT_CHARS = 80
+
+
+def mask_numbers(text: str) -> str:
+    """8 位以上连续数字只保留后 4 位，避免列表和日志泄露完整卡号。"""
+    return re.sub(
+        r"\d{8,}",
+        lambda match: "*" * (len(match.group(0)) - 4) + match.group(0)[-4:],
+        text or "",
+    )
+
+
+def _excerpt(text: str, limit: int = RAW_EXCERPT_CHARS) -> str:
+    compact = " ".join(mask_numbers(text).split())
+    return compact if len(compact) <= limit else compact[:limit] + "…"
+
+
+def _account_for_card(con: sqlite3.Connection, card_tail: str, sender: str) -> int | None:
+    """按 sender + 尾号匹配账户映射；sender 对不上时只有尾号唯一才采用。"""
+    if not card_tail:
+        return None
+    row = con.execute(
+        "SELECT account_id FROM account_cards WHERE card_tail = ? AND sender = ? "
+        "ORDER BY id DESC LIMIT 1",
+        (card_tail, sender or ""),
+    ).fetchone()
+    if row:
+        return int(row["account_id"])
+    rows = con.execute(
+        "SELECT DISTINCT account_id FROM account_cards WHERE card_tail = ?",
+        (card_tail,),
+    ).fetchall()
+    return int(rows[0]["account_id"]) if len(rows) == 1 else None
+
+
+def add_balance_candidate(
+    candidate: Any,
+    *,
+    sender: str = "",
+    raw_text: str = "",
+) -> tuple[int, bool]:
+    """写入一条 pending 候选，按 raw_hash / dedup_key 幂等，返回 (id, 是否新建)。"""
+    now = int(time.time())
+    con = connect()
+    try:
+        account_id = _account_for_card(con, candidate.card_tail, sender)
+        cursor = con.execute(
+            "INSERT OR IGNORE INTO account_balance_snapshots "
+            "(account_id, card_tail, balance, currency, source, observed_at, status, raw_text, "
+            "raw_hash, dedup_key, sender, created_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?, ?, ?)",
+            (
+                account_id,
+                candidate.card_tail,
+                cents(candidate.balance),
+                candidate.currency or "CNY",
+                candidate.source,
+                candidate.observed_at,
+                (raw_text or "")[:500],
+                candidate.raw_hash,
+                candidate.dedup_key,
+                sender or "",
+                now,
+            ),
+        )
+        con.commit()
+        if cursor.rowcount:
+            return int(cursor.lastrowid), True
+        row = con.execute(
+            "SELECT id FROM account_balance_snapshots WHERE raw_hash = ? OR dedup_key = ? "
+            "ORDER BY id LIMIT 1",
+            (candidate.raw_hash, candidate.dedup_key),
+        ).fetchone()
+        return int(row["id"]), False
+    finally:
+        con.close()
+
+
+def list_balance_candidates(
+    status: str = "pending",
+    limit: int = 50,
+    anomaly_ratio: float = 0.5,
+) -> dict[str, Any]:
+    con = connect()
+    try:
+        sql = "SELECT * FROM account_balance_snapshots"
+        params: list[Any] = []
+        if status != "all":
+            sql += " WHERE status = ?"
+            params.append(status)
+        sql += " ORDER BY observed_at DESC, id DESC LIMIT ?"
+        params.append(max(1, min(limit, 200)))
+        rows = con.execute(sql, params).fetchall()
+        accounts = {
+            row["id"]: row["name"]
+            for row in con.execute("SELECT id, name FROM accounts").fetchall()
+        }
+        balances = _balances(con)
+        items = []
+        for row in rows:
+            account_id = row["account_id"]
+            balance_cents = int(row["balance"])
+            current = balances.get(account_id) if account_id else None
+            anomaly = False
+            if current is not None and current != 0:
+                anomaly = abs(balance_cents - current) / abs(current) > anomaly_ratio
+            items.append({
+                "id": row["id"],
+                "account_id": account_id,
+                "account_name": accounts.get(account_id, ""),
+                "card_tail": row["card_tail"],
+                "balance": yuan(balance_cents),
+                "currency": row["currency"],
+                "source": row["source"],
+                "observed_at": row["observed_at"],
+                "created_at": _iso(row["created_at"]),
+                "raw_excerpt": _excerpt(row["raw_text"]),
+                "current_balance": None if current is None else yuan(current),
+                "delta": None if current is None else yuan(balance_cents - current),
+                "anomaly": anomaly,
+                "status": row["status"],
+            })
+        return {"items": items, "pending_count": pending_balance_count()}
+    finally:
+        con.close()
+
+
+def confirm_balance_candidates(
+    ids: list[int],
+    account_id: int | None = None,
+) -> dict[str, Any]:
+    """确认候选：写 confirmed、记下卡号映射，并把最新一条回写到账户余额。"""
+    now = int(time.time())
+    results: list[dict[str, Any]] = []
+    confirmed: list[dict[str, Any]] = []
+    con = connect()
+    try:
+        known_accounts = {
+            int(row["id"]) for row in con.execute("SELECT id FROM accounts").fetchall()
+        }
+        for raw_id in ids:
+            snapshot_id = int(raw_id)
+            row = con.execute(
+                "SELECT * FROM account_balance_snapshots WHERE id = ?", (snapshot_id,)
+            ).fetchone()
+            if not row:
+                results.append({"id": snapshot_id, "status": "missing", "error": "记录不存在"})
+                continue
+            if row["status"] != "pending":
+                results.append({
+                    "id": snapshot_id,
+                    "status": row["status"],
+                    "error": "已经处理过了",
+                })
+                continue
+            target = row["account_id"] or account_id
+            if not target:
+                results.append({
+                    "id": snapshot_id,
+                    "status": "skipped",
+                    "error": "还没指定账户",
+                })
+                continue
+            if int(target) not in known_accounts:
+                results.append({
+                    "id": snapshot_id,
+                    "status": "skipped",
+                    "error": "账户不存在",
+                })
+                continue
+            con.execute(
+                "UPDATE account_balance_snapshots "
+                "SET account_id = ?, status = 'confirmed', decided_at = ? WHERE id = ?",
+                (int(target), now, snapshot_id),
+            )
+            if row["card_tail"]:
+                con.execute(
+                    "INSERT OR IGNORE INTO account_cards "
+                    "(account_id, card_tail, sender, created_at) VALUES (?, ?, ?, ?)",
+                    (int(target), row["card_tail"], row["sender"], now),
+                )
+            confirmed.append({
+                "account_id": int(target),
+                "balance": yuan(row["balance"]),
+                "source": row["source"],
+                "observed_at": row["observed_at"],
+            })
+            results.append({
+                "id": snapshot_id,
+                "status": "confirmed",
+                "account_id": int(target),
+                "balance": yuan(row["balance"]),
+            })
+        con.commit()
+    finally:
+        con.close()
+
+    # 同一账户一次确认多条时，只让 observed_at 最新的那条决定余额
+    latest: dict[int, dict[str, Any]] = {}
+    for item in confirmed:
+        current = latest.get(item["account_id"])
+        if current is None or item["observed_at"] > current["observed_at"]:
+            latest[item["account_id"]] = item
+    if latest:
+        con = connect()
+        try:
+            fresh = {
+                int(row["id"]): row["balance_updated_at"]
+                for row in con.execute("SELECT id, balance_updated_at FROM accounts").fetchall()
+            }
+        finally:
+            con.close()
+        for target, item in latest.items():
+            # 已经同步过更新的余额时，迟到的旧候选不覆盖
+            if fresh.get(target) and fresh[target] > item["observed_at"]:
+                continue
+            reconcile_account(
+                target,
+                item["balance"],
+                source=item["source"],
+                updated_at=item["observed_at"],
+            )
+    return {"items": results, "pending_count": pending_balance_count()}
+
+
+def reject_balance_candidates(ids: list[int], note: str = "") -> dict[str, Any]:
+    now = int(time.time())
+    results: list[dict[str, Any]] = []
+    con = connect()
+    try:
+        for raw_id in ids:
+            snapshot_id = int(raw_id)
+            row = con.execute(
+                "SELECT status FROM account_balance_snapshots WHERE id = ?", (snapshot_id,)
+            ).fetchone()
+            if not row:
+                results.append({"id": snapshot_id, "status": "missing", "error": "记录不存在"})
+                continue
+            if row["status"] != "pending":
+                results.append({
+                    "id": snapshot_id,
+                    "status": row["status"],
+                    "error": "已经处理过了",
+                })
+                continue
+            con.execute(
+                "UPDATE account_balance_snapshots "
+                "SET status = 'rejected', decided_at = ?, note = ? WHERE id = ?",
+                (now, note or "人工驳回", snapshot_id),
+            )
+            results.append({"id": snapshot_id, "status": "rejected"})
+        con.commit()
+    finally:
+        con.close()
+    return {"items": results, "pending_count": pending_balance_count()}
+
+
+def expire_balance_candidates(days: int = 7) -> int:
+    """pending 超过 N 天自动驳回，返回处理条数。"""
+    keep_days = max(1, int(days))
+    now = int(time.time())
+    cutoff = now - keep_days * 86400
+    con = connect()
+    try:
+        cursor = con.execute(
+            "UPDATE account_balance_snapshots "
+            "SET status = 'rejected', decided_at = ?, note = ? "
+            "WHERE status = 'pending' AND created_at < ?",
+            (now, f"超过 {keep_days} 天未确认，自动驳回", cutoff),
+        )
+        con.commit()
+        return int(cursor.rowcount or 0)
+    finally:
+        con.close()
+
+
+def pending_balance_count() -> int:
+    con = connect()
+    try:
+        return int(con.execute(
+            "SELECT COUNT(*) FROM account_balance_snapshots WHERE status = 'pending'"
+        ).fetchone()[0])
+    finally:
+        con.close()
+
+
 # ------------------------------------------------------------- aggregates
 
 
@@ -601,7 +1095,17 @@ def overview(month: str | None = None) -> dict[str, Any]:
     return {
         "month": key,
         "range": {"start": start.isoformat(), "end": end.isoformat()},
-        "accounts": [{"id": a["id"], "name": a["name"], "balance": a["balance"]} for a in accounts],
+        "accounts": [
+            {
+                "id": a["id"],
+                "name": a["name"],
+                "balance": a["balance"],
+                "balance_updated_at": a["balance_updated_at"],
+                "balance_source": a["balance_source"],
+            }
+            for a in accounts
+        ],
+        "pending_balance_candidates": pending_balance_count(),
         "net_worth": yuan(net_worth),
         "month_stats": {
             "out": yuan(total_out),

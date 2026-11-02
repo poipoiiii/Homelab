@@ -1,8 +1,11 @@
+import asyncio
 import base64
 import csv
 import hashlib
+import hmac
 import io
 import json
+import logging
 import os
 import re
 import sqlite3
@@ -13,14 +16,17 @@ from datetime import timedelta
 from typing import Any
 
 import httpx
-from fastapi import FastAPI, File, HTTPException, UploadFile
+from fastapi import FastAPI, File, Header, HTTPException, UploadFile
 from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
 from openpyxl import load_workbook
 from pydantic import BaseModel, Field
 from starlette.background import BackgroundTask
 
+from app import balance as balance_rules
+from app import ingest as ingest_rules
 from app import store
+from app.ingest import normalize_amount, normalize_date, normalize_time
 
 DEEPSEEK_API_KEY = os.environ["DEEPSEEK_API_KEY"]
 DEEPSEEK_BASE_URL = os.getenv("DEEPSEEK_BASE_URL", "https://api.deepseek.com").rstrip("/")
@@ -28,6 +34,15 @@ DEEPSEEK_MODEL = os.getenv("DEEPSEEK_MODEL", "deepseek-flash")
 DEFAULT_ASSET = "现金"
 DEFAULT_CATEGORY = "其他"
 MAX_IMAGE_BYTES = 8 * 1024 * 1024
+# 手机上报凭证：未配置时 /api/ingest 一律拒绝，避免局域网内被随意写账
+INGEST_TOKEN = os.getenv("INGEST_TOKEN", "").strip()
+MAX_TEXT_CHARS = 2000
+# 余额候选核对：偏差超过该比例标记 anomaly；pending 超过该天数自动驳回
+BALANCE_ANOMALY_RATIO = float(os.getenv("BALANCE_ANOMALY_RATIO", "0.5"))
+BALANCE_PENDING_DAYS = int(os.getenv("BALANCE_PENDING_DAYS", "7"))
+BALANCE_CLEANUP_INTERVAL = 24 * 3600
+
+log = logging.getLogger("bill.balance")
 
 # 历史账单里可能出现的旧账户名，导入时自动归到现有账户
 LEGACY_ACCOUNTS = {"银行卡": "中国银行", "储蓄卡": "中国银行"}
@@ -41,13 +56,39 @@ if os.path.isdir(BRANDING_DIR):
     app.mount("/branding", StaticFiles(directory=BRANDING_DIR), name="branding")
 store.init_db()
 
+# 每天清理一次超期未确认的余额候选（进程内后台任务，不引入调度框架）
+_balance_cleanup_task: asyncio.Task | None = None
+
+
+async def _balance_cleanup_loop() -> None:
+    while True:
+        try:
+            expired = store.expire_balance_candidates(BALANCE_PENDING_DAYS)
+            if expired:
+                log.info("自动驳回 %s 条超过 %s 天的余额候选", expired, BALANCE_PENDING_DAYS)
+        except Exception:
+            log.exception("清理过期余额候选失败")
+        await asyncio.sleep(BALANCE_CLEANUP_INTERVAL)
+
+
+@app.on_event("startup")
+async def _start_balance_cleanup() -> None:
+    global _balance_cleanup_task
+    _balance_cleanup_task = asyncio.create_task(_balance_cleanup_loop())
+
+
+@app.on_event("shutdown")
+async def _stop_balance_cleanup() -> None:
+    if _balance_cleanup_task:
+        _balance_cleanup_task.cancel()
+
 
 @app.middleware("http")
 async def static_no_cache(request, call_next):
     """静态资源与页面每次都校验，避免改完样式刷新看不到变化。"""
     response = await call_next(request)
     path = request.url.path
-    if path.startswith("/static/") or path in ("/", "/dashboard", "/transactions", "/settings"):
+    if path.startswith("/static/") or path in ("/", "/dashboard", "/transactions", "/settings", "/inbox"):
         response.headers["Cache-Control"] = "no-cache"
     return response
 
@@ -70,6 +111,30 @@ class CommitPayload(BaseModel):
     items: list[Item]
 
 
+class IngestPayload(BaseModel):
+    """手机端上报的原始消息。只传原文，解析全部放在服务端。"""
+
+    source: str = Field(pattern="^(sms|notification)$")
+    text: str
+    sender: str = ""
+    ts: int | None = None
+    device: str = ""
+
+
+class InboxAcceptPayload(BaseModel):
+    """确认入账时可以覆盖任意字段，避免解析错了要重录。"""
+
+    type: str | None = Field(default=None, pattern="^(withdrawal|deposit|transfer)$")
+    date: str | None = None
+    time: str | None = None
+    amount: str | None = None
+    merchant: str | None = None
+    description: str | None = None
+    account: str | None = None
+    to_account: str | None = None
+    category: str | None = None
+
+
 class AccountPayload(BaseModel):
     name: str
     opening_balance: str = "0"
@@ -85,6 +150,17 @@ class AccountUpdate(BaseModel):
 
 class ReconcilePayload(BaseModel):
     balance: str
+
+
+class BalanceConfirmPayload(BaseModel):
+    """ids 支持批量；account_id 只用于把所有「仅尾号」候选指定到同一个账户。"""
+
+    ids: list[int]
+    account_id: int | None = None
+
+
+class BalanceRejectPayload(BaseModel):
+    ids: list[int]
 
 
 class CategoryPayload(BaseModel):
@@ -140,40 +216,6 @@ def clean_json(text: str) -> dict[str, Any]:
     if start >= 0 and end > start:
         text = text[start:end + 1]
     return json.loads(text)
-
-
-def normalize_amount(value: Any) -> str:
-    raw = str(value or "").replace(",", "").replace("¥", "").replace("￥", "").strip()
-    match = re.search(r"-?\d+(?:\.\d+)?", raw)
-    if not match:
-        return "0.00"
-    try:
-        return f"{abs(float(match.group(0))):.2f}"
-    except ValueError:
-        return "0.00"
-
-
-def normalize_date(value: Any) -> str:
-    raw = str(value or "").strip()
-    match = re.search(r"(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})", raw)
-    if match:
-        y, m, d = (int(x) for x in match.groups())
-        try:
-            return date_cls(y, m, d).isoformat()
-        except ValueError:
-            pass
-    return date_cls.today().isoformat()
-
-
-def normalize_time(value: Any) -> str:
-    raw = str(value or "").strip()
-    match = re.search(r"(\d{1,2}):(\d{2})", raw)
-    if not match:
-        return ""
-    h, m = int(match.group(1)), int(match.group(2))
-    if 0 <= h <= 23 and 0 <= m <= 59:
-        return f"{h:02d}:{m:02d}"
-    return ""
 
 
 CATEGORY_MAP = {
@@ -546,6 +588,11 @@ async def settings_page() -> FileResponse:
     return FileResponse(os.path.join(STATIC_DIR, "settings.html"))
 
 
+@app.get("/inbox")
+async def inbox_page() -> FileResponse:
+    return FileResponse(os.path.join(STATIC_DIR, "inbox.html"))
+
+
 @app.get("/favicon.ico")
 async def favicon() -> FileResponse:
     return FileResponse(os.path.join(BRANDING_DIR, "favicon.ico"))
@@ -774,6 +821,280 @@ def commit_items(items: list[Item]) -> dict[str, Any]:
 @app.post("/api/commit")
 async def commit(payload: CommitPayload) -> dict[str, Any]:
     return commit_items(payload.items)
+
+
+# ------------------------------------------------------- 手机上报 / 待入账
+
+# 规则解析在 app/ingest.py；这里只保留需要访问数据库和模型的逻辑
+
+
+async def llm_parse_text(text: str, source: str, sender: str, ts: int) -> tuple[dict[str, Any] | None, str]:
+    """规则失配时交给模型兜底，只接受字段合法的结果。"""
+    meta_data = meta_payload()
+    asset_names = [x["name"] for x in meta_data["assets"]] or [DEFAULT_ASSET]
+    category_names = [x["name"] for x in meta_data["categories"]] or [DEFAULT_CATEGORY]
+    moment = time.strftime("%Y-%m-%d %H:%M", time.localtime(ts))
+    source_label = "银行/支付短信" if source == "sms" else "手机通知"
+    prompt = f"""你是账单解析引擎。下面是一条{source_label}原文，请提取其中真实发生的交易，只输出 JSON，不要输出解释。
+
+收到时间：{moment}
+发送方：{sender or "未知"}
+原文：
+{text}
+
+输出格式：
+{{
+  "transaction": {{
+    "type": "withdrawal|deposit|transfer",
+    "date": "YYYY-MM-DD",
+    "time": "HH:MM",
+    "amount": "12.34",
+    "merchant": "商户或对方名称",
+    "description": "简短用途",
+    "account": "付款或收款账户",
+    "category": "分类",
+    "confidence": 0.0
+  }}
+}}
+
+规则：
+1. 金额一律为正数并保留两位小数，不要输出余额、额度、优惠、积分。
+2. 支出用 withdrawal，收入用 deposit，账户互转用 transfer。
+3. account 从这些资产账户里选：{"、".join(asset_names)}；判断不出来就用「{DEFAULT_ASSET}」。
+4. category 从这些分类里选：{"、".join(category_names)}；不确定就用「{DEFAULT_CATEGORY}」。
+5. 如果原文不是一笔真实交易（验证码、营销、账单提醒等），输出 {{"transaction": null}}。
+6. 日期时间以原文为准，原文没有就用「收到时间」。"""
+
+    payload = {
+        "model": DEEPSEEK_MODEL,
+        "messages": [{"role": "user", "content": prompt}],
+        "response_format": {"type": "json_object"},
+        "temperature": 0,
+        "max_tokens": 1500,
+    }
+    try:
+        async with httpx.AsyncClient(timeout=60) as client:
+            response = await client.post(
+                DEEPSEEK_BASE_URL + "/chat/completions",
+                headers={
+                    "Authorization": f"Bearer {DEEPSEEK_API_KEY}",
+                    "Content-Type": "application/json",
+                },
+                json=payload,
+            )
+    except Exception as error:  # 网络不可用时不要阻塞入队
+        return None, f"模型接口不可用：{str(error)[:80]}"
+
+    if response.status_code >= 400:
+        return None, f"模型接口返回 {response.status_code}: {response.text[:120]}"
+
+    try:
+        body = response.json()
+    except ValueError:
+        content_type = response.headers.get("Content-Type", "")
+        return None, f"模型接口返回非 JSON（{content_type}）"
+
+    content = (body.get("choices") or [{}])[0].get("message", {}).get("content") or ""
+    if not content.strip():
+        return None, "模型没有返回内容（推理占满 token），可手动补充"
+    try:
+        data = clean_json(content).get("transaction")
+    except json.JSONDecodeError:
+        return None, f"模型返回的不是合法 JSON：{content[:80]}"
+
+    if not isinstance(data, dict):
+        return None, "模型判定非交易消息"
+
+    amount = normalize_amount(data.get("amount"))
+    if amount == "0.00":
+        return None, "模型未给出金额"
+    txn_type = str(data.get("type") or "withdrawal").lower()
+    if txn_type not in {"withdrawal", "deposit", "transfer"}:
+        txn_type = "withdrawal"
+    account = str(data.get("account") or "").strip()
+    if account not in asset_names:
+        account = DEFAULT_ASSET if DEFAULT_ASSET in asset_names else ""
+    category = str(data.get("category") or "").strip()
+    if category not in category_names:
+        category = DEFAULT_CATEGORY if DEFAULT_CATEGORY in category_names else ""
+    parsed = {
+        "type": txn_type,
+        "date": normalize_date(data.get("date") or moment[:10]),
+        "time": normalize_time(data.get("time") or moment[11:]),
+        "amount": amount,
+        "merchant": str(data.get("merchant") or "").strip()[:60],
+        "description": str(data.get("description") or text[:120]).strip()[:120],
+        "account": account,
+        "to_account": "",
+        "category": category,
+        "confidence": 0.6,
+        "order_id": "",
+    }
+    return parsed, "AI 解析"
+
+
+def check_ingest_token(token: str | None) -> None:
+    if not INGEST_TOKEN:
+        raise HTTPException(503, "服务端未配置 INGEST_TOKEN，手机上报已关闭")
+    if not token or not hmac.compare_digest(token, INGEST_TOKEN):
+        raise HTTPException(401, "上报凭证无效")
+
+
+@app.get("/api/ingest/ping")
+async def ingest_ping(
+    x_ingest_token: str | None = Header(default=None, alias="X-Ingest-Token"),
+) -> dict[str, Any]:
+    check_ingest_token(x_ingest_token)
+    return {"ok": True, "server_time": int(time.time()), "pending": store.inbox_pending_count()}
+
+
+@app.post("/api/ingest")
+async def ingest(
+    payload: IngestPayload,
+    x_ingest_token: str | None = Header(default=None, alias="X-Ingest-Token"),
+) -> dict[str, Any]:
+    check_ingest_token(x_ingest_token)
+
+    text = (payload.text or "").strip()
+    if not text:
+        raise HTTPException(400, "text 不能为空")
+    text = text[:MAX_TEXT_CHARS]
+    if ingest_rules.is_noise(text):
+        return {"ok": True, "stored": False, "reason": "noise"}
+
+    ts = int(payload.ts or time.time())
+    # 余额识别与记账解析互不影响：先落候选，解析失败也不会丢余额
+    try:
+        candidate = balance_rules.parse_balance(text, payload.source, payload.sender, ts)
+        if candidate:
+            store.add_balance_candidate(
+                candidate,
+                sender=(payload.sender or "")[:64],
+                raw_text=text,
+            )
+        elif any(keyword in text for keyword in balance_rules.BALANCE_KEYWORDS):
+            log.info("余额候选未识别（缺金额或尾号）：%s", store.mask_numbers(text)[:60])
+    except Exception:  # 余额识别失败不影响 /api/ingest 的 2xx
+        log.exception("余额候选写入失败")
+
+    account_names = [a["name"] for a in store.list_accounts(include_archived=True)]
+    parsed, note = ingest_rules.parse_ingest_text(
+        text, payload.source, payload.sender, ts, account_names, DEFAULT_CATEGORY,
+    )
+    if not parsed:
+        # 转账/红包通知本身没有金额，先给半成品，不用白跑一趟模型
+        parsed, note = ingest_rules.parse_notification_hint(text, payload.source, ts, account_names)
+    if not parsed:
+        parsed, note = await llm_parse_text(text, payload.source, payload.sender, ts)
+        if not parsed and not note.startswith("模型"):
+            return {"ok": True, "stored": False, "reason": "not_a_transaction", "note": note}
+
+    fingerprint = ingest_rules.ingest_fingerprint(payload.source, payload.sender, text, ts)
+    inbox_id, created = store.add_inbox(
+        source=payload.source,
+        sender=(payload.sender or "")[:64],
+        raw_text=text,
+        received_at=ts,
+        device=(payload.device or "")[:64],
+        fingerprint=fingerprint,
+        parsed=parsed,
+        note="" if note in ("规则解析", "AI 解析") else note,
+    )
+    return {
+        "ok": True,
+        "stored": created,
+        "id": inbox_id,
+        "parsed": parsed,
+        "note": note,
+        "pending": store.inbox_pending_count(),
+    }
+
+
+@app.get("/api/inbox")
+async def inbox_list(status: str = "pending", limit: int = 100, offset: int = 0) -> dict[str, Any]:
+    if status not in {"pending", "accepted", "rejected", "all"}:
+        raise HTTPException(400, "status 只能是 pending、accepted、rejected 或 all")
+    return {
+        "items": store.list_inbox(status=status, limit=limit, offset=offset),
+        "pending": store.inbox_pending_count(),
+        "meta": meta_payload(),
+    }
+
+
+@app.post("/api/inbox/{inbox_id}/accept")
+async def accept_inbox(inbox_id: int, payload: InboxAcceptPayload | None = None) -> dict[str, Any]:
+    row = store.get_inbox(inbox_id)
+    if not row:
+        raise HTTPException(404, "待入账记录不存在")
+    if row["status"] != "pending":
+        raise HTTPException(400, "这条已经处理过了")
+
+    merged = {**(row["parsed"] or {}), **(payload.model_dump(exclude_none=True) if payload else {})}
+    amount = normalize_amount(merged.get("amount"))
+    if amount == "0.00":
+        raise HTTPException(400, "金额为空，请先填写金额")
+
+    moment = time.localtime(row["received_at"])
+    item = Item(
+        type=merged.get("type") or "withdrawal",
+        date=normalize_date(merged.get("date") or time.strftime("%Y-%m-%d", moment)),
+        time=normalize_time(merged.get("time")) or time.strftime("%H:%M", moment),
+        amount=amount,
+        merchant=str(merged.get("merchant") or "")[:120],
+        description=str(merged.get("description") or "")[:200],
+        account=str(merged.get("account") or ""),
+        to_account=str(merged.get("to_account") or ""),
+        category=str(merged.get("category") or DEFAULT_CATEGORY),
+        confidence=float(merged.get("confidence") or 0),
+        order_id=f"ingest:{row['fingerprint'][:40]}",
+    )
+    result = commit_items([item])
+    detail = (result["details"] or [{}])[0]
+    if not result["committed"]:
+        raise HTTPException(400, f"入账失败：{detail.get('error') or '未知原因'}")
+
+    txn_id = int(detail["group_id"]) if detail.get("group_id") else None
+    store.finish_inbox(inbox_id, "accepted", txn_id=txn_id)
+    return {"ok": True, "txn_id": txn_id, "pending": store.inbox_pending_count()}
+
+
+@app.post("/api/inbox/{inbox_id}/reject")
+async def reject_inbox(inbox_id: int) -> dict[str, Any]:
+    row = store.get_inbox(inbox_id)
+    if not row:
+        raise HTTPException(404, "待入账记录不存在")
+    if row["status"] != "pending":
+        raise HTTPException(400, "这条已经处理过了")
+    store.finish_inbox(inbox_id, "rejected")
+    return {"ok": True, "pending": store.inbox_pending_count()}
+
+
+# ------------------------------------------------------------ 余额候选核对
+
+
+@app.get("/api/balances/candidates")
+async def balance_candidates(status: str = "pending", limit: int = 50) -> dict[str, Any]:
+    if status not in {"pending", "confirmed", "rejected", "all"}:
+        raise HTTPException(400, "status 只能是 pending、confirmed、rejected 或 all")
+    return store.list_balance_candidates(
+        status=status,
+        limit=limit,
+        anomaly_ratio=BALANCE_ANOMALY_RATIO,
+    )
+
+
+@app.post("/api/balances/candidates/confirm")
+async def confirm_balance_candidates(payload: BalanceConfirmPayload) -> dict[str, Any]:
+    if not payload.ids:
+        raise HTTPException(400, "ids 不能为空")
+    return store.confirm_balance_candidates(payload.ids, payload.account_id)
+
+
+@app.post("/api/balances/candidates/reject")
+async def reject_balance_candidates(payload: BalanceRejectPayload) -> dict[str, Any]:
+    if not payload.ids:
+        raise HTTPException(400, "ids 不能为空")
+    return store.reject_balance_candidates(payload.ids)
 
 
 @app.get("/api/accounts")
