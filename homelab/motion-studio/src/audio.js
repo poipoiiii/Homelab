@@ -1,7 +1,7 @@
 // 程序化配乐与音效：120 BPM，卡点与转场/条目入场对齐。
 // 输出 48kHz 16-bit 立体声 WAV；不依赖任何音频素材，避免版权问题。
 import fs from 'node:fs/promises';
-import { mulberry32 } from './gfx.js';
+import { mulberry32 } from './theme.js';
 
 export const BPM = 120;
 export const BEAT = 60 / BPM; // 0.5s

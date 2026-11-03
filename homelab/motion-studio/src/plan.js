@@ -1,5 +1,5 @@
 // 把请求规格排成时间线：每个场景的时长、数据、转场。
-import { W, H, TRANSITIONS } from './gfx.js';
+import { W, H, TRANSITIONS } from './theme.js';
 
 export const PAGE_SIZE = 5;
 const MAX_TOTAL_SECONDS = 240;

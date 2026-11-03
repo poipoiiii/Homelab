@@ -5,13 +5,12 @@ import fsp from 'node:fs/promises';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import { spawnSync } from 'node:child_process';
-import { GlobalFonts } from '@napi-rs/canvas';
 import { JobStore } from './jobs.js';
 import { LIMITS } from './validate.js';
 import { RESOLUTIONS, MAX_TOTAL_SECONDS } from './plan.js';
-import { THEMES } from './gfx.js';
+import { THEMES } from './theme.js';
 
-const VERSION = '1.0.0';
+const VERSION = '2.0.0';
 const PORT = Number(process.env.PORT || 8095);
 const DATA_DIR = process.env.DATA_DIR || path.resolve('data');
 const TOKEN = (process.env.MOTION_TOKEN || '').trim();
@@ -31,8 +30,8 @@ const FFMPEG_VERSION = FFMPEG_OK ? (ffmpeg.stdout || '').split('\n')[0] : '';
 
 function cjkFontsReady() {
   try {
-    const families = GlobalFonts.families || [];
-    return families.some((item) => /CJK|Source Han|Noto Sans SC|Noto Serif SC/i.test(item.family || ''));
+    const result = spawnSync('fc-list', [':lang=zh', 'family'], { encoding: 'utf8' });
+    return result.status === 0 && /CJK|Source Han|Noto (Sans|Serif)/i.test(result.stdout || '');
   } catch {
     return false;
   }
@@ -154,6 +153,7 @@ const routes = [
       json(res, 200, {
         status: 'ok',
         version: VERSION,
+        renderer: 'hyperframes',
         ffmpeg: FFMPEG_OK,
         ffmpeg_version: FFMPEG_VERSION,
         cjk_fonts: cjkFontsReady(),
@@ -174,6 +174,7 @@ const routes = [
       json(res, 200, {
         service: 'motion-studio',
         version: VERSION,
+        renderer: 'hyperframes',
         templates: [
           { id: 'ledger', name: '台账', desc: '按章节自动分页，条目逐行入场' },
           { id: 'scenes', name: '自定义场景', desc: '自由组合封面/章节/列表/数字/引用/结尾' },

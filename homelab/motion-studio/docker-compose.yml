@@ -1,4 +1,4 @@
-# 本地数据播报视频渲染服务：canvas 逐帧 + ffmpeg 编码
+# 本地数据播报视频渲染服务：HyperFrames HTML 合成 + 无头 Chrome 抓帧 + ffmpeg 编码
 # 访问：本机 127.0.0.1:8095；手机通过 tailnet 或 SSH 隧道访问
 x-logging: &default-logging
   driver: json-file
@@ -18,8 +18,11 @@ services:
       - TZ=Asia/Shanghai
       - PORT=8095
       - DATA_DIR=/data
-      # 渲染并发固定 1：单帧是 CPU 密集的 canvas 绘制，多开会拖慢其他容器
+      # 任务并发固定 1；单个任务内部由 HyperFrames 开多个 Chrome worker 并行抓帧
       - RENDER_CONCURRENCY=1
+      # 0 = 由 HyperFrames 按 CPU 自动决定；3 与实测机器（8 线程）匹配
+      - HYPERFRAMES_WORKERS=${HYPERFRAMES_WORKERS:-3}
+      - HYPERFRAMES_QUALITY=${HYPERFRAMES_QUALITY:-standard}
       # 任务保留天数与上限
       - KEEP_DAYS=14
       - MAX_JOBS=200

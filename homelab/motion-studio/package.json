@@ -1,17 +1,18 @@
 {
   "name": "motion-studio",
-  "version": "1.0.0",
+  "version": "2.0.0",
   "private": true,
   "type": "module",
-  "description": "本地数据播报视频渲染服务：canvas 逐帧绘制 + ffmpeg 编码，供 HomelabApp 调用",
+  "description": "本地数据播报视频渲染服务：HyperFrames HTML 合成 + 无头 Chrome 抓帧 + ffmpeg 编码，供 HomelabApp 调用",
   "engines": {
-    "node": ">=20"
+    "node": ">=22"
   },
   "scripts": {
     "start": "node src/index.js",
-    "check": "node --check src/index.js && node --check src/jobs.js && node --check src/render.js && node --check src/scenes.js && node --check src/gfx.js && node --check src/plan.js && node --check src/validate.js && node --check src/portrait.js && node --check src/audio.js"
+    "check": "node --check src/index.js && node --check src/jobs.js && node --check src/render.js && node --check src/html.js && node --check src/theme.js && node --check src/plan.js && node --check src/validate.js && node --check src/audio.js"
   },
   "dependencies": {
-    "@napi-rs/canvas": "^0.1.65"
+    "@hyperframes/producer": "0.9.0",
+    "gsap": "3.15.0"
   }
 }

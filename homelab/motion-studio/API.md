@@ -2,6 +2,8 @@
 
 基础地址：`http://127.0.0.1:8095`（手机端用 tailnet 地址或 SSH 隧道）。
 
+> 2.0 起渲染引擎换成 HyperFrames，**接口、字段和任务状态保持不变**，客户端无需改动；`/healthz` 和 `/api/v1/meta` 额外返回 `renderer: "hyperframes"`，可忽略。
+
 所有接口返回 JSON（视频/封面除外）。错误统一为：
 
 ```json
