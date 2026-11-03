@@ -1,0 +1,31 @@
+# MQTT broker —— STM32/ESP8266 设备侧数据入口，Android 控制台订阅
+# 访问：公网 poipoiii.cn:1883（经 frpc-mqtt 隧道）、tailnet 100.110.64.50:1883
+# 账号密码由 setup.sh 生成在 /home/ubuntu/mqtt/passwd（不入库）
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
+services:
+  mqtt:
+    image: eclipse-mosquitto:2
+    container_name: mqtt
+    logging: *default-logging
+    labels:
+      dev.dozzle.group: "设备接入"
+    restart: unless-stopped
+    ports:
+      # 对外监听，供 frp / tailnet / 内网访问；禁用匿名，靠 password_file + acl_file 控制
+      - "0.0.0.0:1883:1883"
+    environment:
+      - TZ=Asia/Shanghai
+    volumes:
+      - ./mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
+      - ./aclfile:/mosquitto/config/aclfile:ro
+      # 密码文件含明文账号凭据，只放 ext4 的 ~/mqtt，不进仓库
+      - /home/ubuntu/mqtt/passwd:/mosquitto/config/passwd:ro
+      - mqtt_data:/mosquitto/data
+
+volumes:
+  mqtt_data:

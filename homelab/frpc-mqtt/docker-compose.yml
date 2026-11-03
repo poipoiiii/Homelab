@@ -1,0 +1,22 @@
+# 只把 MQTT 1883 映射到公网 frps 的独立 frpc 实例
+# 与 homelab/frpc 分开：那边暴露 Jellyfin / Minecraft，当前已停用；
+# 这里只开 MQTT，避免启动隧道时顺带把其他服务带上公网。
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
+services:
+  frpc-mqtt:
+    image: fatedier/frpc:v0.65.0
+    container_name: frpc-mqtt
+    logging: *default-logging
+    labels:
+      dev.dozzle.group: "入口与运维"
+    restart: unless-stopped
+    network_mode: host
+    volumes:
+      # 含 frps token，只放 ext4，不进仓库
+      - /home/ubuntu/frp/frpc-mqtt.toml:/etc/frp/frpc.toml:ro
+    command: ["-c", "/etc/frp/frpc.toml"]

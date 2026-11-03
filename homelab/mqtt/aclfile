@@ -1,0 +1,17 @@
+# topic 约定：home/<site>/stm32/<dev>/...
+# site 目前是 dorm（宿舍），设备搬回家后改为 home 或家中实际站点名；
+# 控制台用通配符订阅，新增站点无需改 App。
+
+# 设备：只能写自己的状态/遥测，只能读自己的命令
+user rong
+topic write home/+/stm32/rong/state
+topic write home/+/stm32/rong/telemetry
+topic write home/+/stm32/rong/status
+topic read  home/+/stm32/rong/cmd
+
+# 控制台（Android / PC）：只读设备数据，只能下发命令
+user app
+topic read  home/+/stm32/+/state
+topic read  home/+/stm32/+/telemetry
+topic read  home/+/stm32/+/status
+topic write home/+/stm32/+/cmd
